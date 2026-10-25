@@ -74,6 +74,59 @@ function timeAgo(iso) {
   return fmtDate(iso);
 }
 
+/* =========================================================
+   IMPLEMENTASI ALGORITMA (UKK CLUSTER 1)
+   ========================================================= */
+/**
+ * FUNGSI 1: BUBBLE SORT
+ * Mengurutkan array objek berdasarkan ID secara Ascending (A-Z)
+ */
+function bubbleSortById(arr) {
+  console.time('Waktu Bubble Sort'); // Profiling Program
+  let len = arr.length;
+  let tempArr = [...arr]; // Clone array agar state asli tidak rusak
+  
+  for (let i = 0; i < len; i++) {
+    for (let j = 0; j < len - i - 1; j++) {
+      if (tempArr[j].id > tempArr[j + 1].id) {
+        let temp = tempArr[j];
+        tempArr[j] = tempArr[j + 1];
+        tempArr[j + 1] = temp;
+      }
+    }
+  }
+  console.timeEnd('Waktu Bubble Sort');
+  return tempArr;
+}
+
+/**
+ * FUNGSI 2: BINARY SEARCH
+ * Mencari ID pengajuan di dalam array yang sudah di-sort
+ */
+function binarySearchById(arr, targetId) {
+  console.time('Waktu Binary Search'); // Profiling Program
+  let left = 0;
+  let right = arr.length - 1;
+  let result = null;
+
+  while (left <= right) {
+    let mid = Math.floor((left + right) / 2);
+    
+    if (arr[mid].id === targetId) {
+      result = arr[mid];
+      break;
+    }
+    if (arr[mid].id < targetId) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+  console.timeEnd('Waktu Binary Search');
+  return result;
+}
+/* ========================================================= */
+
 /* ---------------- Storage ---------------- */
 const store = {
   get(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } },
@@ -718,7 +771,6 @@ function openPemilikModal(id) {
     if (password.length < 6) return toast('Password minimal 6 karakter', 'error');
     if (!/^[a-z0-9_]+$/.test(username)) return toast('Username hanya huruf kecil, angka, dan underscore', 'error');
 
-    // cek duplikat username
     const dup = state.users.find(x => x.username === username && x.id !== u?.id);
     if (dup) return toast('Username sudah digunakan', 'error');
 
@@ -968,7 +1020,7 @@ function renderAdminRequests() {
   $('#content').innerHTML = `
     <div class="toolbar">
       <div class="search-box">
-        <input class="input" id="searchReq" placeholder="Cari judul, ID, nama pemilik, atau blok...">
+        <input class="input" id="searchReq" placeholder="Cari judul, nama, atau ID Exact (REQ-...)">
       </div>
       <select class="input" id="filterReqStatus" style="max-width:200px">
         <option value="all">Semua Status</option>
@@ -1005,18 +1057,35 @@ function applyAdminFilters() {
   const q = ($('#searchReq')?.value || '').toLowerCase().trim();
   const st = $('#filterReqStatus')?.value || 'all';
   const pm = $('#filterReqPerumahan')?.value || 'all';
+  
   let list = getAllRequests();
   if (st !== 'all') list = list.filter(r => r.status === st);
   if (pm !== 'all') list = list.filter(r => r.perumahanId === pm);
+  
   if (q) {
-    list = list.filter(r =>
-      r.title.toLowerCase().includes(q) ||
-      r.id.toLowerCase().includes(q) ||
-      r.ownerName.toLowerCase().includes(q) ||
-      (r.blok || '').toLowerCase().includes(q) ||
-      r.category.toLowerCase().includes(q)
-    );
+    // IMPLEMENTASI ALGORITMA: Jika query diawali 'req-', gunakan Binary Search
+    if (q.startsWith('req-')) {
+      const targetId = q.toUpperCase();
+      const sortedList = bubbleSortById(list); // Sort dulu
+      const searchResult = binarySearchById(sortedList, targetId); // Cari
+      
+      if (searchResult) {
+        list = [searchResult]; // Tampilkan yang ketemu
+      } else {
+        list = []; // Kosongkan jika tidak ketemu
+      }
+    } else {
+      // Filter biasa untuk partial match (judul, nama, dll)
+      list = list.filter(r =>
+        r.title.toLowerCase().includes(q) ||
+        r.id.toLowerCase().includes(q) ||
+        r.ownerName.toLowerCase().includes(q) ||
+        (r.blok || '').toLowerCase().includes(q) ||
+        r.category.toLowerCase().includes(q)
+      );
+    }
   }
+
   const body = $('#reqTableBody');
   if (!body) return;
   if (!list.length) {
