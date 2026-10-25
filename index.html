@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MyHome — Property Maintenance CRM</title>
+<title>Dreamland — Property Management</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -17,20 +17,20 @@
     <div class="blob b1"></div>
     <div class="blob b2"></div>
     <div class="lv-brand">
-      <div class="logo-mark">🏠</div>
-      <span>MyHome</span>
+      <div class="logo-mark">🏘️</div>
+      <span>Dreamland</span>
     </div>
     <div class="lv-body">
-      <h1>Kelola perbaikan rumah<br>dengan mudah &amp; transparan.</h1>
-      <p>Platform CRM untuk pengelolaan maintenance &amp; renovasi rumah di lingkungan perumahan.</p>
+      <h1>Kelola perumahan &<br>renovasi rumah dalam satu sistem.</h1>
+      <p>Platform terpusat untuk mengelola data perumahan, pemilik rumah, dan pengajuan renovasi garansi awal.</p>
       <ul class="lv-list">
-        <li><span>✓</span> Ajukan perbaikan lengkap dengan foto</li>
-        <li><span>✓</span> Pantau progres secara real-time</li>
-        <li><span>✓</span> Dikelola langsung oleh admin property</li>
-        <li><span>✓</span> Riwayat pekerjaan tersimpan rapi</li>
+        <li><span>✓</span> Multi perumahan dalam satu dashboard</li>
+        <li><span>✓</span> Pengajuan renovasi online & transparan</li>
+        <li><span>✓</span> Pantau tahapan dari pengajuan hingga selesai</li>
+        <li><span>✓</span> Riwayat renovasi tersimpan rapi</li>
       </ul>
     </div>
-    <div class="lv-foot">© 2025 MyHome Property CRM</div>
+    <div class="lv-foot">© 2025 Dreamland — infodreamland.my.id</div>
   </div>
 
   <div class="login-panel">
@@ -38,28 +38,24 @@
       <h2>Selamat datang 👋</h2>
       <p class="muted">Masuk untuk melanjutkan ke dashboard Anda.</p>
 
-      <div class="role-switch" id="roleSwitch">
-        <button type="button" class="role-btn active" data-role="user">Pemilik Rumah</button>
-        <button type="button" class="role-btn" data-role="admin">Admin Property</button>
-      </div>
-
-      <form id="loginForm" autocomplete="off">
+      <form id="loginForm" autocomplete="off" novalidate>
         <div class="field">
-          <label for="loginEmail">Email</label>
-          <input class="input" type="email" id="loginEmail" placeholder="nama@email.com" required>
+          <label for="loginUsername">Username</label>
+          <input class="input" type="text" id="loginUsername" placeholder="username Anda" autocomplete="username">
         </div>
         <div class="field">
           <label for="loginPassword">Password</label>
-          <input class="input" type="password" id="loginPassword" placeholder="••••••" required>
+          <input class="input" type="password" id="loginPassword" placeholder="••••••" autocomplete="current-password">
         </div>
         <button class="btn btn-primary btn-block" type="submit">Masuk</button>
       </form>
 
       <div class="demo-box">
         <div class="demo-title">Akun demo</div>
-        <div class="demo-row"><span>Pemilik Rumah</span><code>budi@myhome.id / 123456</code></div>
-        <div class="demo-row"><span>Admin Property</span><code>admin@myhome.id / 123456</code></div>
-        <button type="button" class="btn btn-ghost btn-block" id="fillDemo">Isi otomatis</button>
+        <div class="demo-row"><span>Admin / Pengelola</span><code>admin / admin123</code></div>
+        <div class="demo-row"><span>Pemilik Rumah</span><code>budi / 123456</code></div>
+        <div class="demo-row"><span>Pemilik Rumah</span><code>siti / 123456</code></div>
+        <button type="button" class="btn btn-ghost btn-block" id="fillDemo">Isi otomatis (Admin)</button>
       </div>
     </div>
   </div>
@@ -71,10 +67,10 @@
 
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
-      <div class="logo-mark sm">🏠</div>
+      <div class="logo-mark sm">🏘️</div>
       <div class="brand-text">
-        <strong>MyHome</strong>
-        <small>Property CRM</small>
+        <strong>Dreamland</strong>
+        <small>Property Management</small>
       </div>
     </div>
     <nav class="nav" id="navList"></nav>
