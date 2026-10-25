@@ -1,77 +1,73 @@
 /* =========================================================
-   MyHome — Property Maintenance CRM
+   Dreamland — Property Management CRM
    Frontend demo (vanilla JS + localStorage)
    ========================================================= */
 
-/* ---------------- Konstanta ---------------- */
+/* ---------------- Status 7 tahap + ditolak ---------------- */
 const STATUS = {
-  menunggu:     { label: 'Menunggu Verifikasi', short: 'Menunggu',   color: '#f59e0b' },
-  diverifikasi: { label: 'Terverifikasi',       short: 'Diverifikasi', color: '#3b82f6' },
-  dikerjakan:   { label: 'Sedang Dikerjakan',   short: 'Dikerjakan', color: '#6366f1' },
-  selesai:      { label: 'Selesai',             short: 'Selesai',    color: '#10b981' },
-  ditolak:      { label: 'Ditolak',             short: 'Ditolak',    color: '#ef4444' },
+  diajukan:    { label: 'Diajukan',    short: 'Diajukan',    color: '#94a3b8', bg: '#f1f5f9' },
+  verifikasi:  { label: 'Verifikasi',  short: 'Verifikasi',  color: '#f59e0b', bg: '#fef3c7' },
+  survei:      { label: 'Survei',      short: 'Survei',      color: '#3b82f6', bg: '#dbeafe' },
+  perencanaan: { label: 'Perencanaan', short: 'Perencanaan', color: '#8b5cf6', bg: '#ede9fe' },
+  pengerjaan:  { label: 'Pengerjaan',  short: 'Pengerjaan',  color: '#6366f1', bg: '#e0e7ff' },
+  pemeriksaan: { label: 'Pemeriksaan', short: 'Pemeriksaan', color: '#06b6d4', bg: '#cffafe' },
+  selesai:     { label: 'Selesai',     short: 'Selesai',     color: '#10b981', bg: '#d1fae5' },
+  ditolak:     { label: 'Ditolak',     short: 'Ditolak',     color: '#ef4444', bg: '#fee2e2' },
 };
-const STATUS_ORDER = ['menunggu', 'diverifikasi', 'dikerjakan', 'selesai', 'ditolak'];
+const STATUS_FLOW = ['diajukan', 'verifikasi', 'survei', 'perencanaan', 'pengerjaan', 'pemeriksaan', 'selesai'];
+const STATUS_ALL  = [...STATUS_FLOW, 'ditolak'];
 
 const CATEGORIES = [
-  'Renovasi', 'Perbaikan Atap', 'Plumbing / Air', 'Instalasi Listrik',
-  'Pengecatan', 'Keramik / Lantai', 'Taman & Carport', 'Lainnya'
+  'Renovasi Ruangan', 'Perbaikan Atap', 'Perbaikan Plafon',
+  'Plumbing / Air', 'Instalasi Listrik', 'Pengecatan',
+  'Keramik / Lantai', 'Taman & Carport', 'Lainnya'
 ];
 const PRIORITIES = ['Rendah', 'Sedang', 'Tinggi'];
 
 const NAV = {
-  user: [
+  admin: [
     { id: 'dashboard', label: 'Dashboard',        icon: '📊' },
-    { id: 'new',       label: 'Ajukan Perbaikan', icon: '➕' },
-    { id: 'requests',  label: 'Pengajuan Saya',   icon: '📋' },
+    { id: 'perumahan', label: 'Perumahan',        icon: '🏘️' },
+    { id: 'pemilik',   label: 'Pemilik Rumah',    icon: '👥' },
+    { id: 'requests',  label: 'Pengajuan Renovasi', icon: '📋' },
     { id: 'help',      label: 'Panduan',          icon: '💡' },
   ],
-  admin: [
-    { id: 'dashboard', label: 'Dashboard',           icon: '📊' },
-    { id: 'requests',  label: 'Semua Pengajuan',     icon: '📋' },
-    { id: 'workers',   label: 'Pekerja / Developer', icon: '👷' },
-    { id: 'help',      label: 'Panduan',             icon: '💡' },
+  user: [
+    { id: 'dashboard', label: 'Dashboard',         icon: '📊' },
+    { id: 'program',   label: 'Program & Garansi', icon: '🎁' },
+    { id: 'new',       label: 'Ajukan Renovasi',   icon: '➕' },
+    { id: 'requests',  label: 'Pengajuan Saya',    icon: '📋' },
+    { id: 'help',      label: 'Panduan',           icon: '💡' },
   ],
 };
 
 const PAGE_META = {
-  dashboard: { title: 'Dashboard',          sub: 'Ringkasan aktivitas maintenance' },
-  new:       { title: 'Ajukan Perbaikan',   sub: 'Lengkapi data dan foto rumah Anda' },
-  requests:  { title: 'Pengajuan',          sub: 'Pantau status setiap pengajuan' },
-  workers:   { title: 'Pekerja / Developer', sub: 'Kelola mitra pelaksana perbaikan' },
-  help:      { title: 'Panduan',            sub: 'Cara menggunakan MyHome' },
+  dashboard: { title: 'Dashboard',         sub: 'Ringkasan sistem Dreamland' },
+  perumahan: { title: 'Perumahan',         sub: 'Kelola data perumahan' },
+  pemilik:   { title: 'Pemilik Rumah',     sub: 'Kelola akun pemilik rumah' },
+  requests:  { title: 'Pengajuan Renovasi', sub: 'Pantau seluruh pengajuan' },
+  new:       { title: 'Ajukan Renovasi',   sub: 'Lengkapi formulir pengajuan' },
+  program:   { title: 'Program & Garansi', sub: 'Informasi renovasi garansi awal' },
+  help:      { title: 'Panduan',           sub: 'Cara menggunakan Dreamland' },
 };
-
-const DEMO_USERS = [
-  { email: 'budi@myhome.id',  password: '123456', role: 'user',  name: 'Budi Santoso',   blok: 'A-12', phone: '0812-3456-7890' },
-  { email: 'siti@myhome.id',  password: '123456', role: 'user',  name: 'Siti Rahmawati', blok: 'B-07', phone: '0813-9876-5432' },
-  { email: 'admin@myhome.id', password: '123456', role: 'admin', name: 'Admin Property', blok: 'Kantor Pengelola', phone: '021-555-0123' },
-];
 
 /* ---------------- Helpers ---------------- */
 const $  = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
-
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-));
-
-const uid = () => 'REQ-' + Math.random().toString(36).slice(2, 7).toUpperCase();
-
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const uid = (p = 'REQ') => `${p}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 const fmtDateTime = (iso) => new Date(iso).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
-
 const initials = (name) => String(name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
-
 const statusBadge = (s) => `<span class="status ${s}">${STATUS[s]?.label || s}</span>`;
 
 function timeAgo(iso) {
   const diff = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return 'baru saja';
-  if (min < 60) return `${min} menit lalu`;
-  const h = Math.floor(min / 60);
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'baru saja';
+  if (m < 60) return `${m} menit lalu`;
+  const h = Math.floor(m / 60);
   if (h < 24) return `${h} jam lalu`;
   const d = Math.floor(h / 24);
   if (d < 30) return `${d} hari lalu`;
@@ -80,116 +76,139 @@ function timeAgo(iso) {
 
 /* ---------------- Storage ---------------- */
 const store = {
-  get(key, def) {
-    try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; }
-    catch (e) { return def; }
-  },
-  set(key, val) {
-    try { localStorage.setItem(key, JSON.stringify(val)); return true; }
-    catch (e) { toast('Penyimpanan browser penuh. Hapus beberapa pengajuan lama.', 'error'); return false; }
-  },
-  del(key) { localStorage.removeItem(key); }
+  get(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } },
+  set(k, v)   { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { toast('Penyimpanan penuh.', 'error'); return false; } },
+  del(k)      { localStorage.removeItem(k); },
 };
 
-const K_REQ     = 'myhome_requests';
-const K_WORKERS = 'myhome_workers';
-const K_SESSION = 'myhome_session';
+const K_USERS    = 'dl_users';
+const K_PERUMAHAN= 'dl_perumahan';
+const K_REQ      = 'dl_requests';
+const K_SESSION  = 'dl_session';
 
 /* ---------------- State ---------------- */
 const state = {
   session: null,
   page: 'dashboard',
+  users: [],
+  perumahan: [],
   requests: [],
-  workers: [],
   draftPhotos: [],
-  loginRole: 'user',
 };
 
-/* ---------------- Seed data ---------------- */
-function seedRequests() {
-  const now = Date.now();
-  const d = (days) => new Date(now - days * 86400000).toISOString();
-
+/* ---------------- Seed ---------------- */
+function seedPerumahan() {
   return [
-    {
-      id: 'REQ-A1B2C',
-      ownerName: 'Budi Santoso', ownerEmail: 'budi@myhome.id', blok: 'A-12', phone: '0812-3456-7890',
-      title: 'Renovasi Dapur & Penggantian Kitchen Set',
-      category: 'Renovasi',
-      description: 'Ingin merenovasi dapur dengan mengganti kitchen set lama yang sudah rusak. Rencana juga menambah meja island kecil dan mengganti keramik lantai dapur. Mohon dibantu estimasi biaya dan waktu pengerjaan.',
-      priority: 'Tinggi',
-      photos: [],
-      status: 'dikerjakan',
-      assignedTo: 'CV Karya Bangun',
-      estimatedCost: 25000000,
-      createdAt: d(12), updatedAt: d(4),
-      timeline: [
-        { status: 'menunggu',     note: 'Pengajuan dibuat oleh pemilik rumah.', by: 'Budi Santoso', role: 'user',  at: d(12) },
-        { status: 'diverifikasi', note: 'Dokumen dan foto sudah lengkap. Pengajuan disetujui untuk diproses.', by: 'Admin Property', role: 'admin', at: d(10) },
-        { status: 'dikerjakan',   note: 'Pekerjaan dimulai oleh CV Karya Bangun. Estimasi selesai 3 minggu.', by: 'Admin Property', role: 'admin', at: d(4) },
-      ],
-    },
-    {
-      id: 'REQ-D4E5F',
-      ownerName: 'Budi Santoso', ownerEmail: 'budi@myhome.id', blok: 'A-12', phone: '0812-3456-7890',
-      title: 'Perbaikan Atap Bocor di Kamar Utama',
-      category: 'Perbaikan Atap',
-      description: 'Atap bocor saat hujan deras, air menetes ke plafon kamar utama. Sudah terlihat ada bercak kuning di plafon. Mohon segera diperiksa karena khawatir merusak plafon gypsum.',
-      priority: 'Tinggi',
-      photos: [],
-      status: 'menunggu',
-      assignedTo: '',
-      estimatedCost: 0,
-      createdAt: d(1), updatedAt: d(1),
-      timeline: [
-        { status: 'menunggu', note: 'Pengajuan dibuat oleh pemilik rumah.', by: 'Budi Santoso', role: 'user', at: d(1) },
-      ],
-    },
-    {
-      id: 'REQ-G7H8I',
-      ownerName: 'Siti Rahmawati', ownerEmail: 'siti@myhome.id', blok: 'B-07', phone: '0813-9876-5432',
-      title: 'Pengecatan Ulang Fasad Rumah',
-      category: 'Pengecatan',
-      description: 'Cat fasad rumah sudah memudar dan ada beberapa bagian yang mengelupas. Ingin dicat ulang dengan warna yang sama (putih tulang). Luas fasad sekitar 120 m².',
-      priority: 'Sedang',
-      photos: [],
-      status: 'diverifikasi',
-      assignedTo: 'Tukang Cat Mandiri',
-      estimatedCost: 8000000,
-      createdAt: d(6), updatedAt: d(3),
-      timeline: [
-        { status: 'menunggu',     note: 'Pengajuan dibuat oleh pemilik rumah.', by: 'Siti Rahmawati', role: 'user', at: d(6) },
-        { status: 'diverifikasi', note: 'Pengajuan disetujui. Menunggu penjadwalan tim pengecatan.', by: 'Admin Property', role: 'admin', at: d(3) },
-      ],
-    },
-    {
-      id: 'REQ-J9K0L',
-      ownerName: 'Siti Rahmawati', ownerEmail: 'siti@myhome.id', blok: 'B-07', phone: '0813-9876-5432',
-      title: 'Perbaikan Pipa Air Bocor di Kamar Mandi',
-      category: 'Plumbing / Air',
-      description: 'Pipa air di kamar mandi bawah bocor dan membuat lantai selalu basah. Sudah dicoba diisolasi sendiri tapi belum berhasil.',
-      priority: 'Sedang',
-      photos: [],
-      status: 'selesai',
-      assignedTo: 'CV Karya Bangun',
-      estimatedCost: 1500000,
-      createdAt: d(22), updatedAt: d(15),
-      timeline: [
-        { status: 'menunggu',     note: 'Pengajuan dibuat oleh pemilik rumah.', by: 'Siti Rahmawati', role: 'user', at: d(22) },
-        { status: 'diverifikasi', note: 'Pengajuan disetujui.', by: 'Admin Property', role: 'admin', at: d(20) },
-        { status: 'dikerjakan',   note: 'Tim plumbing mulai bekerja.', by: 'Admin Property', role: 'admin', at: d(18) },
-        { status: 'selesai',      note: 'Pipa sudah diganti dan tidak ada kebocoran. Pekerjaan selesai.', by: 'Admin Property', role: 'admin', at: d(15) },
-      ],
-    },
+    { id: 'P-01', nama: 'Dreamland Residence', lokasi: 'Bogor, Jawa Barat', totalUnit: 120,
+      deskripsi: 'Perumahan modern dengan konsep hijau, 120 unit rumah tipe 45–70.' },
+    { id: 'P-02', nama: 'Dreamland Garden', lokasi: 'Depok, Jawa Barat', totalUnit: 80,
+      deskripsi: 'Cluster eksklusif dengan taman pusat, 80 unit rumah tipe 60–90.' },
+    { id: 'P-03', nama: 'Dreamland Valley', lokasi: 'Sentul, Bogor', totalUnit: 150,
+      deskripsi: 'Perumahan dengan pemandangan perbukitan, 150 unit rumah tipe 55–80.' },
   ];
 }
 
-function seedWorkers() {
+function seedUsers() {
+  const now = Date.now();
   return [
-    { id: 'W-01', name: 'CV Karya Bangun',     specialty: 'Renovasi & Struktur', phone: '0811-2233-4455' },
-    { id: 'W-02', name: 'Tukang Cat Mandiri',  specialty: 'Pengecatan & Finishing', phone: '0812-7788-9900' },
-    { id: 'W-03', name: 'Jaya Plumbing',       specialty: 'Plumbing & Sanitasi', phone: '0813-4455-6677' },
-    { id: 'W-04', name: 'Terang Elektrikal',   specialty: 'Instalasi Listrik', phone: '0815-1122-3344' },
+    { id: 'U-01', username: 'admin', password: 'admin123', role: 'admin',
+      nama: 'Admin Dreamland', phone: '021-555-0123', email: 'admin@infodreamland.my.id',
+      perumahanId: null, blok: null, createdAt: new Date(now - 60*86400000).toISOString() },
+    { id: 'U-02', username: 'budi', password: '123456', role: 'user',
+      nama: 'Budi Santoso', phone: '0812-3456-7890', email: 'budi@email.com',
+      perumahanId: 'P-01', blok: 'A-12', createdAt: new Date(now - 40*86400000).toISOString() },
+    { id: 'U-03', username: 'siti', password: '123456', role: 'user',
+      nama: 'Siti Rahmawati', phone: '0813-9876-5432', email: 'siti@email.com',
+      perumahanId: 'P-02', blok: 'B-07', createdAt: new Date(now - 35*86400000).toISOString() },
+    { id: 'U-04', username: 'andi', password: '123456', role: 'user',
+      nama: 'Andi Wijaya', phone: '0815-2233-4455', email: 'andi@email.com',
+      perumahanId: 'P-03', blok: 'C-05', createdAt: new Date(now - 20*86400000).toISOString() },
+  ];
+}
+
+function seedRequests() {
+  const now = Date.now();
+  const d = (days) => new Date(now - days * 86400000).toISOString();
+  return [
+    {
+      id: 'REQ-A1B2', pemilikId: 'U-02', ownerName: 'Budi Santoso',
+      perumahanId: 'P-01', perumahanNama: 'Dreamland Residence',
+      blok: 'A-12', phone: '0812-3456-7890',
+      title: 'Renovasi Dapur & Penggantian Kitchen Set',
+      category: 'Renovasi Ruangan', priority: 'Tinggi',
+      description: 'Dapur lama sudah tidak representatif. Ingin renovasi total dengan kitchen set baru, penambahan meja island, dan penggantian keramik lantai. Mohon survei dan estimasi biaya.',
+      photos: [], status: 'pengerjaan', assignedTo: 'CV Karya Bangun', estimatedCost: 25000000,
+      createdAt: d(14), updatedAt: d(2),
+      timeline: [
+        { status: 'diajukan',    note: 'Pengajuan renovasi dibuat oleh pemilik rumah.', by: 'Budi Santoso', role: 'user', at: d(14) },
+        { status: 'verifikasi',  note: 'Kelengkapan pengajuan sudah sesuai. Lanjut ke tahap survei.', by: 'Admin Dreamland', role: 'admin', at: d(12) },
+        { status: 'survei',      note: 'Survei lokasi selesai. Kondisi dapur sesuai deskripsi.', by: 'Admin Dreamland', role: 'admin', at: d(9) },
+        { status: 'perencanaan', note: 'Rencana renovasi & RAB disusun. Estimasi biaya Rp 25.000.000.', by: 'Admin Dreamland', role: 'admin', at: d(6) },
+        { status: 'pengerjaan',  note: 'Pekerjaan dimulai oleh CV Karya Bangun. Estimasi 3 minggu.', by: 'Admin Dreamland', role: 'admin', at: d(2) },
+      ],
+    },
+    {
+      id: 'REQ-D4E5', pemilikId: 'U-02', ownerName: 'Budi Santoso',
+      perumahanId: 'P-01', perumahanNama: 'Dreamland Residence',
+      blok: 'A-12', phone: '0812-3456-7890',
+      title: 'Perbaikan Atap Bocor di Kamar Utama',
+      category: 'Perbaikan Atap', priority: 'Tinggi',
+      description: 'Atap bocor saat hujan deras, air menetes ke plafon kamar utama. Sudah ada bercak kuning di plafon. Mohon segera diperiksa karena khawatir merusak plafon gypsum.',
+      photos: [], status: 'verifikasi', assignedTo: '', estimatedCost: 0,
+      createdAt: d(2), updatedAt: d(1),
+      timeline: [
+        { status: 'diajukan',   note: 'Pengajuan dibuat oleh pemilik rumah.', by: 'Budi Santoso', role: 'user', at: d(2) },
+        { status: 'verifikasi', note: 'Pengajuan diterima. Sedang diperiksa kelengkapannya.', by: 'Admin Dreamland', role: 'admin', at: d(1) },
+      ],
+    },
+    {
+      id: 'REQ-G7H8', pemilikId: 'U-03', ownerName: 'Siti Rahmawati',
+      perumahanId: 'P-02', perumahanNama: 'Dreamland Garden',
+      blok: 'B-07', phone: '0813-9876-5432',
+      title: 'Pengecatan Ulang Fasad Rumah',
+      category: 'Pengecatan', priority: 'Sedang',
+      description: 'Cat fasad memudar dan mengelupas di beberapa titik. Ingin dicat ulang warna putih tulang. Luas fasad ±120 m².',
+      photos: [], status: 'survei', assignedTo: 'Tukang Cat Mandiri', estimatedCost: 8000000,
+      createdAt: d(6), updatedAt: d(2),
+      timeline: [
+        { status: 'diajukan',   note: 'Pengajuan dibuat oleh pemilik rumah.', by: 'Siti Rahmawati', role: 'user', at: d(6) },
+        { status: 'verifikasi', note: 'Pengajuan disetujui. Lanjut ke survei lokasi.', by: 'Admin Dreamland', role: 'admin', at: d(4) },
+        { status: 'survei',     note: 'Tim survei dijadwalkan minggu ini.', by: 'Admin Dreamland', role: 'admin', at: d(2) },
+      ],
+    },
+    {
+      id: 'REQ-J9K0', pemilikId: 'U-03', ownerName: 'Siti Rahmawati',
+      perumahanId: 'P-02', perumahanNama: 'Dreamland Garden',
+      blok: 'B-07', phone: '0813-9876-5432',
+      title: 'Perbaikan Pipa Air Bocor Kamar Mandi',
+      category: 'Plumbing / Air', priority: 'Sedang',
+      description: 'Pipa air di kamar mandi bawah bocor, lantai selalu basah. Sudah diisolasi sendiri tapi belum berhasil.',
+      photos: [], status: 'selesai', assignedTo: 'Jaya Plumbing', estimatedCost: 1500000,
+      createdAt: d(30), updatedAt: d(18),
+      timeline: [
+        { status: 'diajukan',    note: 'Pengajuan dibuat oleh pemilik rumah.', by: 'Siti Rahmawati', role: 'user', at: d(30) },
+        { status: 'verifikasi',  note: 'Pengajuan disetujui.', by: 'Admin Dreamland', role: 'admin', at: d(28) },
+        { status: 'survei',      note: 'Survei lokasi selesai.', by: 'Admin Dreamland', role: 'admin', at: d(26) },
+        { status: 'perencanaan', note: 'Rencana perbaikan disusun. Estimasi Rp 1.500.000.', by: 'Admin Dreamland', role: 'admin', at: d(24) },
+        { status: 'pengerjaan',  note: 'Pengerjaan dimulai oleh Jaya Plumbing.', by: 'Admin Dreamland', role: 'admin', at: d(22) },
+        { status: 'pemeriksaan', note: 'Pemeriksaan hasil pekerjaan selesai, tidak ada kebocoran.', by: 'Admin Dreamland', role: 'admin', at: d(19) },
+        { status: 'selesai',     note: 'Pekerjaan dinyatakan selesai dan ditutup.', by: 'Admin Dreamland', role: 'admin', at: d(18) },
+      ],
+    },
+    {
+      id: 'REQ-M1N2', pemilikId: 'U-04', ownerName: 'Andi Wijaya',
+      perumahanId: 'P-03', perumahanNama: 'Dreamland Valley',
+      blok: 'C-05', phone: '0815-2233-4455',
+      title: 'Instalasi Stop Kontak Tambahan Ruang Keluarga',
+      category: 'Instalasi Listrik', priority: 'Rendah',
+      description: 'Butuh 2 titik stop kontak tambahan di ruang keluarga untuk perangkat elektronik.',
+      photos: [], status: 'ditolak', assignedTo: '', estimatedCost: 0,
+      createdAt: d(10), updatedAt: d(8),
+      timeline: [
+        { status: 'diajukan',   note: 'Pengajuan dibuat oleh pemilik rumah.', by: 'Andi Wijaya', role: 'user', at: d(10) },
+        { status: 'ditolak',    note: 'Di luar cakupan garansi renovasi awal. Silakan hubungi teknisi listrik pribadi.', by: 'Admin Dreamland', role: 'admin', at: d(8) },
+      ],
+    },
   ];
 }
 
@@ -210,35 +229,31 @@ function toast(msg, type = 'info') {
 }
 
 /* ---------------- Persist ---------------- */
-function persist() {
+function persistAll() {
+  store.set(K_USERS, state.users);
+  store.set(K_PERUMAHAN, state.perumahan);
   store.set(K_REQ, state.requests);
 }
 
 /* ---------------- Auth ---------------- */
-function showLogin() {
-  $('#loginScreen').classList.remove('hidden');
-  $('#app').classList.add('hidden');
-}
-
+function showLogin() { $('#loginScreen').classList.remove('hidden'); $('#app').classList.add('hidden'); }
 function enterApp() {
   $('#loginScreen').classList.add('hidden');
   $('#app').classList.remove('hidden');
   state.page = 'dashboard';
-  renderNav();
-  renderShellUser();
-  renderPage();
+  renderNav(); renderShellUser(); renderPage();
 }
 
 function renderShellUser() {
   const s = state.session;
   $('#userChip').innerHTML = `
-    <div class="avatar">${esc(initials(s.name))}</div>
+    <div class="avatar">${esc(initials(s.nama))}</div>
     <div class="uc-text">
-      <strong>${esc(s.name)}</strong>
-      <small>${esc(s.blok)}</small>
+      <strong>${esc(s.nama)}</strong>
+      <small>${s.role === 'admin' ? 'Admin / Pengelola' : (s.blok ? 'Blok ' + esc(s.blok) : 'Pemilik Rumah')}</small>
     </div>`;
   const badge = $('#roleBadge');
-  badge.textContent = s.role === 'admin' ? 'Admin Property' : 'Pemilik Rumah';
+  badge.textContent = s.role === 'admin' ? 'Admin / Pengelola' : 'Pemilik Rumah';
   badge.className = 'role-badge' + (s.role === 'admin' ? ' admin' : '');
 }
 
@@ -259,11 +274,7 @@ function renderNav() {
     </button>`).join('');
 }
 
-function goTo(page) {
-  state.page = page;
-  renderNav();
-  renderPage();
-}
+function goTo(page) { state.page = page; renderNav(); renderPage(); }
 
 function renderPage() {
   const meta = PAGE_META[state.page] || PAGE_META.dashboard;
@@ -273,30 +284,31 @@ function renderPage() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
   const role = state.session.role;
-  if (state.page === 'dashboard') return role === 'admin' ? renderAdminDashboard() : renderUserDashboard();
-  if (state.page === 'new')       return renderNewRequest();
-  if (state.page === 'requests')  return role === 'admin' ? renderAdminRequests() : renderUserRequests();
-  if (state.page === 'workers')   return renderWorkers();
-  if (state.page === 'help')      return renderHelp();
-  return renderUserDashboard();
+  switch (state.page) {
+    case 'dashboard': return role === 'admin' ? renderAdminDashboard() : renderUserDashboard();
+    case 'perumahan': return renderPerumahan();
+    case 'pemilik':   return renderPemilik();
+    case 'new':       return renderNewRequest();
+    case 'requests':  return role === 'admin' ? renderAdminRequests() : renderUserRequests();
+    case 'program':   return renderProgram();
+    case 'help':      return renderHelp();
+    default:          return role === 'admin' ? renderAdminDashboard() : renderUserDashboard();
+  }
 }
 
-/* ---------------- Data helpers ---------------- */
+/* ---------------- Helpers ---------------- */
 function countBy(list) {
-  const c = { menunggu: 0, diverifikasi: 0, dikerjakan: 0, selesai: 0, ditolak: 0 };
+  const c = {};
+  STATUS_ALL.forEach(s => c[s] = 0);
   list.forEach(r => { if (c[r.status] !== undefined) c[r.status]++; });
   return c;
 }
 const getMyRequests = () => state.requests
-  .filter(r => r.ownerEmail === state.session.email)
+  .filter(r => r.pemilikId === state.session.id)
   .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+const getAllRequests = () => [...state.requests].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+const getPerumahanName = (id) => state.perumahan.find(p => p.id === id)?.nama || '—';
 
-const getAllRequests = () => [...state.requests]
-  .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-const findWorkerName = (id) => (state.workers.find(w => w.name === id)?.name) || id || '';
-
-/* ---------------- Stat grid ---------------- */
 function statGrid(items) {
   return `<div class="stats">${items.map(i => `
     <div class="stat">
@@ -307,7 +319,6 @@ function statGrid(items) {
       </div>
     </div>`).join('')}</div>`;
 }
-
 function emptyState(icon, title, desc, btnLabel, btnPage) {
   return `<div class="empty">
     <div class="e-icon">${icon}</div>
@@ -318,21 +329,81 @@ function emptyState(icon, title, desc, btnLabel, btnPage) {
 }
 
 /* =========================================================
+   ADMIN — DASHBOARD
+   ========================================================= */
+function renderAdminDashboard() {
+  const all = getAllRequests();
+  const c = countBy(all);
+  const total = all.length || 1;
+  const totalPemilik = state.users.filter(u => u.role === 'user').length;
+  const activeCount = c.pengerjaan + c.pemeriksaan + c.survei + c.perencanaan;
+  const pendingVerify = c.diajukan + c.verifikasi;
+
+  const activeList = all.filter(r => ['survei','perencanaan','pengerjaan','pemeriksaan'].includes(r.status)).slice(0, 4);
+
+  $('#content').innerHTML = `
+    ${statGrid([
+      { label: 'Total Perumahan',   value: state.perumahan.length, icon: '🏘️', cls: 'icon-indigo' },
+      { label: 'Total Pemilik',     value: totalPemilik,           icon: '👥', cls: 'icon-blue' },
+      { label: 'Pengajuan Aktif',   value: activeCount,            icon: '🔧', cls: 'icon-purple' },
+      { label: 'Perlu Verifikasi',  value: pendingVerify,          icon: '⏳', cls: 'icon-amber' },
+    ])}
+
+    <div class="grid-2">
+      <div class="card card-pad">
+        <div class="card-head">
+          <h3>Pengajuan Menunggu Tindakan</h3>
+          <button class="link" data-action="nav" data-page="requests">Lihat semua</button>
+        </div>
+        ${all.filter(r => ['diajukan','verifikasi','survei','perencanaan'].includes(r.status)).length
+          ? `<div class="mini-list">${all.filter(r => ['diajukan','verifikasi','survei','perencanaan'].includes(r.status)).slice(0,5).map(miniRow).join('')}</div>`
+          : emptyState('🎉', 'Semua sudah ditangani', 'Tidak ada pengajuan yang menunggu tindakan.', null, null)}
+      </div>
+
+      <div class="card card-pad">
+        <h3 style="margin-bottom:18px">Distribusi Status</h3>
+        <div class="bars">
+          ${STATUS_ALL.map(s => {
+            const v = c[s], pct = Math.round((v / total) * 100);
+            return `<div class="bar-row">
+              <span class="bar-label">${STATUS[s].short}</span>
+              <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${STATUS[s].color}"></div></div>
+              <span class="bar-val">${v}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-pad" style="margin-top:20px">
+      <div class="card-head">
+        <h3>Pekerjaan Berjalan</h3>
+        <span class="muted" style="font-size:13px">${activeList.length} pengajuan aktif</span>
+      </div>
+      ${activeList.length
+        ? `<div class="mini-list">${activeList.map(miniRow).join('')}</div>`
+        : `<p class="muted" style="font-size:13.5px">Belum ada pekerjaan aktif saat ini.</p>`}
+    </div>
+  `;
+}
+
+/* =========================================================
    USER — DASHBOARD
    ========================================================= */
 function renderUserDashboard() {
   const mine = getMyRequests();
   const c = countBy(mine);
-  const firstName = state.session.name.split(' ')[0];
+  const firstName = state.session.nama.split(' ')[0];
+  const perumahan = getPerumahanName(state.session.perumahanId);
 
-  $('#pageSubtitle').textContent = `Halo ${firstName}, pantau perbaikan rumah Anda di sini.`;
+  $('#pageSubtitle').textContent = `Halo ${firstName}, pantau pengajuan renovasi Anda di sini.`;
 
   $('#content').innerHTML = `
     ${statGrid([
-      { label: 'Total Pengajuan', value: mine.length,           icon: '📋', cls: 'icon-indigo' },
-      { label: 'Menunggu',        value: c.menunggu,            icon: '⏳', cls: 'icon-amber' },
-      { label: 'Dalam Proses',    value: c.dikerjakan + c.diverifikasi, icon: '🔧', cls: 'icon-blue' },
-      { label: 'Selesai',         value: c.selesai,             icon: '✅', cls: 'icon-green' },
+      { label: 'Total Pengajuan',  value: mine.length,          icon: '📋', cls: 'icon-indigo' },
+      { label: 'Dalam Proses',     value: mine.filter(r => !['selesai','ditolak'].includes(r.status)).length, icon: '🔧', cls: 'icon-blue' },
+      { label: 'Selesai',          value: c.selesai,            icon: '✅', cls: 'icon-green' },
+      { label: 'Ditolak',          value: c.ditolak,            icon: '✕',  cls: 'icon-rose' },
     ])}
 
     <div class="grid-2">
@@ -343,25 +414,24 @@ function renderUserDashboard() {
         </div>
         ${mine.length
           ? `<div class="mini-list">${mine.slice(0, 5).map(miniRow).join('')}</div>`
-          : emptyState('📭', 'Belum ada pengajuan', 'Mulai ajukan perbaikan rumah Anda sekarang.', 'Ajukan Sekarang', 'new')}
+          : emptyState('📭', 'Belum ada pengajuan', 'Mulai ajukan renovasi rumah Anda sekarang.', 'Ajukan Renovasi', 'new')}
       </div>
 
       <div class="card card-pad">
-        <h3 style="margin-bottom:14px">Butuh Perbaikan?</h3>
+        <h3 style="margin-bottom:14px">Butuh Renovasi?</h3>
         <p class="muted" style="font-size:13.5px;margin-bottom:18px;line-height:1.65">
-          Ajukan permintaan perbaikan atau renovasi rumah Anda. Sertakan foto dan deskripsi
-          yang jelas agar admin property dapat memproses lebih cepat.
+          Ajukan permintaan renovasi rumah Anda. Lengkapi deskripsi dan foto agar admin dapat memproses lebih cepat.
         </p>
-        <button class="btn btn-primary btn-block" data-action="nav" data-page="new" style="margin-bottom:10px">➕ Buat Pengajuan Baru</button>
-        <button class="btn btn-ghost btn-block" data-action="nav" data-page="requests">📋 Lihat Riwayat</button>
+        <button class="btn btn-primary btn-block" data-action="nav" data-page="new" style="margin-bottom:10px">➕ Ajukan Renovasi</button>
+        <button class="btn btn-ghost btn-block" data-action="nav" data-page="program">🎁 Info Program Garansi</button>
 
         <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--border)">
           <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:12px">Info Rumah</div>
           <div class="info-item" style="margin-bottom:9px">
-            <div class="k">Nama Pemilik</div><div class="v">${esc(state.session.name)}</div>
+            <div class="k">Perumahan</div><div class="v">${esc(perumahan)}</div>
           </div>
           <div class="info-item">
-            <div class="k">Blok / No. Rumah</div><div class="v">${esc(state.session.blok)}</div>
+            <div class="k">Blok / No. Rumah</div><div class="v">${esc(state.session.blok || '—')}</div>
           </div>
         </div>
       </div>
@@ -382,17 +452,311 @@ function miniRow(r) {
 }
 
 /* =========================================================
-   USER — FORM PENGAJUAN BARU
+   ADMIN — PERUMAHAN
+   ========================================================= */
+function renderPerumahan() {
+  $('#content').innerHTML = `
+    <div class="toolbar">
+      <div class="search-box">
+        <input class="input" id="searchPerumahan" placeholder="Cari nama atau lokasi perumahan...">
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-primary btn-sm" data-action="add-perumahan">➕ Tambah Perumahan</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Nama Perumahan</th><th>Lokasi</th>
+              <th>Total Unit</th><th>Pemilik Terdaftar</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="perumahanTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  $('#searchPerumahan').addEventListener('input', applyFilterPerumahan);
+  applyFilterPerumahan();
+}
+
+function applyFilterPerumahan() {
+  const q = ($('#searchPerumahan')?.value || '').toLowerCase().trim();
+  const list = state.perumahan.filter(p =>
+    !q || p.nama.toLowerCase().includes(q) || p.lokasi.toLowerCase().includes(q)
+  );
+  const tbody = $('#perumahanTbody');
+  if (!tbody) return;
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="6">
+      <div class="empty" style="padding:44px 20px">
+        <div class="e-icon">🏘️</div>
+        <h4>Tidak ada perumahan</h4>
+        <p>Tambahkan perumahan pertama Anda.</p>
+      </div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map(p => {
+    const count = state.users.filter(u => u.role === 'user' && u.perumahanId === p.id).length;
+    return `<tr>
+      <td><span class="mono">${p.id}</span></td>
+      <td><span class="td-title">${esc(p.nama)}</span></td>
+      <td><span class="td-sub" style="font-size:13px;color:#475569">${esc(p.lokasi)}</span></td>
+      <td><strong>${p.totalUnit}</strong> unit</td>
+      <td><strong>${count}</strong> orang</td>
+      <td class="row-actions">
+        <button class="btn btn-ghost btn-sm" data-action="edit-perumahan" data-id="${p.id}">Ubah</button>
+        <button class="btn btn-danger btn-sm" data-action="delete-perumahan" data-id="${p.id}">Hapus</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openPerumahanModal(id) {
+  const p = id ? state.perumahan.find(x => x.id === id) : null;
+  const isEdit = !!p;
+  $('#modalRoot').innerHTML = `
+    <div class="modal-backdrop" id="modalBackdrop">
+      <div class="modal modal-narrow">
+        <div class="modal-head">
+          <div><h3>${isEdit ? 'Ubah Perumahan' : 'Tambah Perumahan'}</h3></div>
+          <button class="modal-close" data-action="close-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <form id="perumahanForm">
+            <div class="field">
+              <label for="pNama">Nama Perumahan *</label>
+              <input class="input" id="pNama" required value="${esc(p?.nama || '')}" placeholder="Contoh: Dreamland Residence">
+            </div>
+            <div class="field">
+              <label for="pLokasi">Lokasi *</label>
+              <input class="input" id="pLokasi" required value="${esc(p?.lokasi || '')}" placeholder="Contoh: Bogor, Jawa Barat">
+            </div>
+            <div class="field">
+              <label for="pUnit">Total Unit *</label>
+              <input class="input" type="number" min="1" id="pUnit" required value="${p?.totalUnit || ''}" placeholder="120">
+            </div>
+            <div class="field">
+              <label for="pDesk">Deskripsi</label>
+              <textarea class="input" id="pDesk" rows="3" placeholder="Deskripsi singkat perumahan...">${esc(p?.deskripsi || '')}</textarea>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-ghost" data-action="close-modal">Batal</button>
+              <button type="submit" class="btn btn-primary">${isEdit ? 'Simpan Perubahan' : 'Tambah Perumahan'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>`;
+  document.body.style.overflow = 'hidden';
+
+  $('#perumahanForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nama = $('#pNama').value.trim();
+    const lokasi = $('#pLokasi').value.trim();
+    const totalUnit = Number($('#pUnit').value);
+    const deskripsi = $('#pDesk').value.trim();
+    if (!nama || !lokasi || !totalUnit) return toast('Lengkapi field wajib', 'error');
+
+    if (isEdit) {
+      p.nama = nama; p.lokasi = lokasi; p.totalUnit = totalUnit; p.deskripsi = deskripsi;
+      toast('Perumahan diperbarui', 'success');
+    } else {
+      state.perumahan.push({ id: uid('P'), nama, lokasi, totalUnit, deskripsi });
+      toast('Perumahan ditambahkan', 'success');
+    }
+    persistAll();
+    closeModal();
+    renderPerumahan();
+  });
+}
+
+/* =========================================================
+   ADMIN — PEMILIK RUMAH
+   ========================================================= */
+function renderPemilik() {
+  $('#content').innerHTML = `
+    <div class="toolbar">
+      <div class="search-box">
+        <input class="input" id="searchPemilik" placeholder="Cari nama, username, blok, atau perumahan...">
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-primary btn-sm" data-action="add-pemilik">➕ Tambah Pemilik</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nama</th><th>Username</th><th>Perumahan</th>
+              <th>Blok</th><th>Kontak</th><th>Pengajuan</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="pemilikTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  $('#searchPemilik').addEventListener('input', applyFilterPemilik);
+  applyFilterPemilik();
+}
+
+function applyFilterPemilik() {
+  const q = ($('#searchPemilik')?.value || '').toLowerCase().trim();
+  let list = state.users.filter(u => u.role === 'user');
+  if (q) {
+    list = list.filter(u =>
+      u.nama.toLowerCase().includes(q) ||
+      u.username.toLowerCase().includes(q) ||
+      (u.blok || '').toLowerCase().includes(q) ||
+      getPerumahanName(u.perumahanId).toLowerCase().includes(q)
+    );
+  }
+  const tbody = $('#pemilikTbody');
+  if (!tbody) return;
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="7">
+      <div class="empty" style="padding:44px 20px">
+        <div class="e-icon">👥</div>
+        <h4>Tidak ada pemilik rumah</h4>
+        <p>Tambahkan akun pemilik rumah pertama.</p>
+      </div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map(u => {
+    const reqCount = state.requests.filter(r => r.pemilikId === u.id).length;
+    return `<tr>
+      <td><span class="td-title">${esc(u.nama)}</span></td>
+      <td><span class="mono">${esc(u.username)}</span></td>
+      <td><span class="td-sub" style="font-size:13px;color:#475569">${esc(getPerumahanName(u.perumahanId))}</span></td>
+      <td><strong>${esc(u.blok || '—')}</strong></td>
+      <td><span class="td-sub">${esc(u.phone || '—')}</span></td>
+      <td><strong>${reqCount}</strong></td>
+      <td class="row-actions">
+        <button class="btn btn-ghost btn-sm" data-action="edit-pemilik" data-id="${u.id}">Ubah</button>
+        <button class="btn btn-danger btn-sm" data-action="delete-pemilik" data-id="${u.id}">Hapus</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openPemilikModal(id) {
+  const u = id ? state.users.find(x => x.id === id) : null;
+  const isEdit = !!u;
+  const perumahanOptions = state.perumahan.map(p =>
+    `<option value="${p.id}" ${u?.perumahanId === p.id ? 'selected' : ''}>${esc(p.nama)}</option>`
+  ).join('');
+
+  $('#modalRoot').innerHTML = `
+    <div class="modal-backdrop" id="modalBackdrop">
+      <div class="modal modal-narrow">
+        <div class="modal-head">
+          <div><h3>${isEdit ? 'Ubah Data Pemilik' : 'Tambah Pemilik Rumah'}</h3>
+            <div class="sub">Akun login akan dibuatkan otomatis</div>
+          </div>
+          <button class="modal-close" data-action="close-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <form id="pemilikForm">
+            <div class="form-grid">
+              <div class="field full">
+                <label for="uNama">Nama Lengkap *</label>
+                <input class="input" id="uNama" required value="${esc(u?.nama || '')}" placeholder="Nama sesuai KTP">
+              </div>
+              <div class="field">
+                <label for="uUsername">Username *</label>
+                <input class="input" id="uUsername" required value="${esc(u?.username || '')}" placeholder="huruf kecil, tanpa spasi">
+              </div>
+              <div class="field">
+                <label for="uPassword">Password *</label>
+                <input class="input" id="uPassword" required value="${esc(u?.password || '')}" placeholder="min. 6 karakter">
+              </div>
+              <div class="field">
+                <label for="uPerumahan">Perumahan *</label>
+                <select class="input" id="uPerumahan" required>
+                  <option value="">— Pilih perumahan —</option>
+                  ${perumahanOptions}
+                </select>
+              </div>
+              <div class="field">
+                <label for="uBlok">Blok / No. Rumah *</label>
+                <input class="input" id="uBlok" required value="${esc(u?.blok || '')}" placeholder="Contoh: A-12">
+              </div>
+              <div class="field">
+                <label for="uPhone">No. WhatsApp *</label>
+                <input class="input" id="uPhone" required value="${esc(u?.phone || '')}" placeholder="08xx-xxxx-xxxx">
+              </div>
+              <div class="field">
+                <label for="uEmail">Email</label>
+                <input class="input" type="email" id="uEmail" value="${esc(u?.email || '')}" placeholder="email@contoh.com">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-ghost" data-action="close-modal">Batal</button>
+              <button type="submit" class="btn btn-primary">${isEdit ? 'Simpan Perubahan' : 'Tambah Pemilik'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>`;
+  document.body.style.overflow = 'hidden';
+
+  $('#pemilikForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nama = $('#uNama').value.trim();
+    const username = $('#uUsername').value.trim().toLowerCase();
+    const password = $('#uPassword').value;
+    const perumahanId = $('#uPerumahan').value;
+    const blok = $('#uBlok').value.trim();
+    const phone = $('#uPhone').value.trim();
+    const email = $('#uEmail').value.trim();
+
+    if (!nama || !username || !password || !perumahanId || !blok || !phone) {
+      return toast('Lengkapi field wajib', 'error');
+    }
+    if (password.length < 6) return toast('Password minimal 6 karakter', 'error');
+    if (!/^[a-z0-9_]+$/.test(username)) return toast('Username hanya huruf kecil, angka, dan underscore', 'error');
+
+    // cek duplikat username
+    const dup = state.users.find(x => x.username === username && x.id !== u?.id);
+    if (dup) return toast('Username sudah digunakan', 'error');
+
+    if (isEdit) {
+      Object.assign(u, { nama, username, password, perumahanId, blok, phone, email });
+      toast('Data pemilik diperbarui', 'success');
+    } else {
+      state.users.push({
+        id: uid('U'), username, password, role: 'user',
+        nama, perumahanId, blok, phone, email,
+        createdAt: new Date().toISOString(),
+      });
+      toast('Pemilik rumah ditambahkan', 'success');
+    }
+    persistAll();
+    closeModal();
+    renderPemilik();
+  });
+}
+
+/* =========================================================
+   USER — FORM PENGAJUAN
    ========================================================= */
 function renderNewRequest() {
   state.draftPhotos = [];
+  const myPerumahan = getPerumahanName(state.session.perumahanId);
 
   $('#content').innerHTML = `
     <div style="max-width:860px">
       <div class="card card-pad">
         <div class="card-head">
-          <h3>Formulir Pengajuan Perbaikan</h3>
-          <span class="status diverifikasi">Langkah 1 dari 1</span>
+          <h3>Formulir Pengajuan Renovasi</h3>
+          ${statusBadge('diajukan')}
+        </div>
+
+        <div class="info-item" style="margin-bottom:20px">
+          <div class="k">Diajukan untuk rumah</div>
+          <div class="v">${esc(myPerumahan)} — Blok ${esc(state.session.blok || '—')}</div>
         </div>
 
         <form id="requestForm">
@@ -401,7 +765,6 @@ function renderNewRequest() {
               <label for="fTitle">Judul Pengajuan *</label>
               <input class="input" id="fTitle" required maxlength="90" placeholder="Contoh: Perbaikan atap bocor di kamar utama">
             </div>
-
             <div class="field">
               <label for="fCategory">Kategori Pekerjaan *</label>
               <select class="input" id="fCategory" required>
@@ -409,31 +772,18 @@ function renderNewRequest() {
                 ${CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('')}
               </select>
             </div>
-
             <div class="field">
               <label for="fPriority">Tingkat Prioritas *</label>
               <select class="input" id="fPriority" required>
                 ${PRIORITIES.map(p => `<option value="${p}" ${p === 'Sedang' ? 'selected' : ''}>${p}</option>`).join('')}
               </select>
             </div>
-
-            <div class="field">
-              <label for="fBlok">Blok / No. Rumah *</label>
-              <input class="input" id="fBlok" required value="${esc(state.session.blok)}">
-            </div>
-
-            <div class="field">
-              <label for="fPhone">No. WhatsApp *</label>
-              <input class="input" id="fPhone" required value="${esc(state.session.phone || '')}" placeholder="08xx-xxxx-xxxx">
-            </div>
-
             <div class="field full">
-              <label for="fDesc">Deskripsi Kerusakan / Rencana *</label>
+              <label for="fDesc">Deskripsi Kebutuhan *</label>
               <textarea class="input" id="fDesc" required rows="5"
-                placeholder="Jelaskan kondisi kerusakan, bagian rumah yang diperbaiki, serta harapan Anda..."></textarea>
-              <div class="hint">Semakin detail deskripsi Anda, semakin cepat proses verifikasi.</div>
+                placeholder="Jelaskan kondisi kerusakan atau rencana renovasi secara detail..."></textarea>
+              <div class="hint">Semakin detail deskripsi, semakin cepat proses verifikasi.</div>
             </div>
-
             <div class="field full">
               <label>Foto Kondisi Rumah</label>
               <div class="dropzone" id="dropzone">
@@ -445,7 +795,6 @@ function renderNewRequest() {
               <div class="photo-grid" id="photoGrid"></div>
             </div>
           </div>
-
           <div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap">
             <button type="submit" class="btn btn-primary">Kirim Pengajuan</button>
             <button type="button" class="btn btn-ghost" data-action="nav" data-page="dashboard">Batal</button>
@@ -457,40 +806,26 @@ function renderNewRequest() {
 
   const fileInput = $('#photoInput');
   const dz = $('#dropzone');
-
   dz.addEventListener('click', () => fileInput.click());
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
   dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
-  dz.addEventListener('drop', e => {
-    e.preventDefault();
-    dz.classList.remove('drag');
-    handleFiles(e.dataTransfer.files);
-  });
-  fileInput.addEventListener('change', e => {
-    handleFiles(e.target.files);
-    fileInput.value = '';
-  });
-
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); handleFiles(e.dataTransfer.files); });
+  fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value = ''; });
   $('#requestForm').addEventListener('submit', submitRequest);
 }
 
 async function handleFiles(files) {
   const list = Array.from(files).filter(f => f.type.startsWith('image/'));
   if (!list.length) return;
-
   const remaining = 5 - state.draftPhotos.length;
   if (remaining <= 0) return toast('Maksimal 5 foto per pengajuan', 'error');
-
   const toProcess = list.slice(0, remaining);
   if (list.length > remaining) toast(`Hanya ${remaining} foto ditambahkan (maks. 5)`, 'info');
-
   for (const file of toProcess) {
     try {
       const dataUrl = await compressImage(file);
       state.draftPhotos.push(dataUrl);
-    } catch (e) {
-      toast('Gagal memproses gambar', 'error');
-    }
+    } catch { toast('Gagal memproses gambar', 'error'); }
   }
   renderDraftPhotos();
 }
@@ -514,12 +849,9 @@ function compressImage(file, maxSize = 1100, quality = 0.72) {
         let { width, height } = img;
         if (width > height && width > maxSize) { height = Math.round(height * maxSize / width); width = maxSize; }
         else if (height >= width && height > maxSize) { width = Math.round(width * maxSize / height); height = maxSize; }
-
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.onerror = reject;
@@ -532,40 +864,35 @@ function compressImage(file, maxSize = 1100, quality = 0.72) {
 
 function submitRequest(e) {
   e.preventDefault();
-
   const title = $('#fTitle').value.trim();
   const category = $('#fCategory').value;
   const priority = $('#fPriority').value;
-  const blok = $('#fBlok').value.trim();
-  const phone = $('#fPhone').value.trim();
   const description = $('#fDesc').value.trim();
-
-  if (!title || !category || !blok || !phone || !description) {
-    return toast('Mohon lengkapi semua field wajib', 'error');
-  }
+  if (!title || !category || !description) return toast('Mohon lengkapi semua field wajib', 'error');
 
   const now = new Date().toISOString();
   const req = {
     id: uid(),
-    ownerName: state.session.name,
-    ownerEmail: state.session.email,
-    blok, phone,
+    pemilikId: state.session.id,
+    ownerName: state.session.nama,
+    perumahanId: state.session.perumahanId,
+    perumahanNama: getPerumahanName(state.session.perumahanId),
+    blok: state.session.blok,
+    phone: state.session.phone,
     title, category, priority, description,
     photos: [...state.draftPhotos],
-    status: 'menunggu',
+    status: 'diajukan',
     assignedTo: '',
     estimatedCost: 0,
     createdAt: now,
     updatedAt: now,
     timeline: [
-      { status: 'menunggu', note: 'Pengajuan dibuat oleh pemilik rumah.', by: state.session.name, role: 'user', at: now },
+      { status: 'diajukan', note: 'Pengajuan renovasi dibuat oleh pemilik rumah.', by: state.session.nama, role: 'user', at: now },
     ],
   };
-
   state.requests.push(req);
-  persist();
+  persistAll();
   state.draftPhotos = [];
-
   toast('Pengajuan berhasil dikirim!', 'success');
   goTo('requests');
   setTimeout(() => openDetail(req.id), 320);
@@ -576,11 +903,10 @@ function submitRequest(e) {
    ========================================================= */
 function renderUserRequests() {
   const mine = getMyRequests();
-
   $('#content').innerHTML = `
     <div class="toolbar">
       <div class="chips" id="userChips">
-        ${['all', ...STATUS_ORDER].map(s => `
+        ${['all', ...STATUS_ALL].map(s => `
           <button class="chip ${s === 'all' ? 'active' : ''}" data-action="filter-user" data-status="${s}">
             ${s === 'all' ? 'Semua' : STATUS[s].short}
           </button>`).join('')}
@@ -590,23 +916,18 @@ function renderUserRequests() {
     </div>
     <div id="userList"></div>
   `;
-
   renderUserList(mine, 'all');
 }
 
 function renderUserList(list, filter) {
   const box = $('#userList');
   const filtered = filter === 'all' ? list : list.filter(r => r.status === filter);
-
   if (!filtered.length) {
-    box.innerHTML = `<div class="card">${emptyState(
-      '🗂️', 'Tidak ada pengajuan',
+    box.innerHTML = `<div class="card">${emptyState('🗂️', 'Tidak ada pengajuan',
       filter === 'all' ? 'Anda belum membuat pengajuan apapun.' : 'Tidak ada pengajuan dengan status ini.',
-      filter === 'all' ? 'Ajukan Sekarang' : null, 'new'
-    )}</div>`;
+      filter === 'all' ? 'Ajukan Renovasi' : null, 'new')}</div>`;
     return;
   }
-
   box.innerHTML = `<div class="req-list">${filtered.map(reqCard).join('')}</div>`;
 }
 
@@ -617,8 +938,7 @@ function reqCard(r) {
       : r.category === 'Perbaikan Atap' ? '🏠'
       : r.category === 'Plumbing / Air' ? '🚿'
       : r.category === 'Instalasi Listrik' ? '💡'
-      : r.category === 'Renovasi' ? '🔨' : '🛠️');
-
+      : r.category === 'Renovasi Ruangan' ? '🔨' : '🛠️');
   return `
     <div class="req-card" data-action="open-detail" data-id="${r.id}">
       <div class="req-thumb">${thumb}</div>
@@ -630,10 +950,10 @@ function reqCard(r) {
         <h4>${esc(r.title)}</h4>
         <p class="req-desc">${esc(r.description)}</p>
         <div class="req-meta">
+          <span>🏘️ ${esc(r.perumahanNama || '—')}</span>
           <span>🏷️ ${esc(r.category)}</span>
           <span>📅 ${fmtDate(r.createdAt)}</span>
           ${r.assignedTo ? `<span>🔧 ${esc(r.assignedTo)}</span>` : ''}
-          ${r.estimatedCost ? `<span>💰 ${rupiah(r.estimatedCost)}</span>` : ''}
         </div>
       </div>
       <div class="req-arrow">›</div>
@@ -641,94 +961,33 @@ function reqCard(r) {
 }
 
 /* =========================================================
-   ADMIN — DASHBOARD
-   ========================================================= */
-function renderAdminDashboard() {
-  const all = getAllRequests();
-  const c = countBy(all);
-  const total = all.length || 1;
-
-  $('#pageSubtitle').textContent = 'Pantau seluruh pengajuan maintenance perumahan.';
-
-  const pending = all.filter(r => r.status === 'menunggu');
-  const active = all.filter(r => r.status === 'dikerjakan' || r.status === 'diverifikasi');
-
-  $('#content').innerHTML = `
-    ${statGrid([
-      { label: 'Total Pengajuan', value: all.length,  icon: '📋', cls: 'icon-indigo' },
-      { label: 'Perlu Verifikasi', value: c.menunggu, icon: '⏳', cls: 'icon-amber' },
-      { label: 'Sedang Dikerjakan', value: c.dikerjakan, icon: '🔧', cls: 'icon-blue' },
-      { label: 'Selesai',          value: c.selesai,  icon: '✅', cls: 'icon-green' },
-    ])}
-
-    <div class="grid-2">
-      <div class="card card-pad">
-        <div class="card-head">
-          <h3>Perlu Tindakan</h3>
-          <button class="link" data-action="nav" data-page="requests">Lihat semua</button>
-        </div>
-        ${pending.length
-          ? `<div class="mini-list">${pending.slice(0, 5).map(miniRow).join('')}</div>`
-          : emptyState('🎉', 'Semua sudah ditangani', 'Tidak ada pengajuan yang menunggu verifikasi.', null, null)}
-      </div>
-
-      <div class="card card-pad">
-        <h3 style="margin-bottom:18px">Distribusi Status</h3>
-        <div class="bars">
-          ${STATUS_ORDER.map(s => {
-            const v = c[s];
-            const pct = Math.round((v / total) * 100);
-            return `<div class="bar-row">
-              <span class="bar-label">${STATUS[s].short}</span>
-              <div class="bar-track"><div class="bar-fill ${s}" style="width:${pct}%"></div></div>
-              <span class="bar-val">${v}</span>
-            </div>`;
-          }).join('')}
-        </div>
-
-        <div style="margin-top:24px;padding-top:18px;border-top:1px solid var(--border)">
-          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:12px">Pekerjaan Aktif</div>
-          ${active.length
-            ? `<div class="mini-list">${active.slice(0, 3).map(miniRow).join('')}</div>`
-            : `<p class="muted" style="font-size:13px">Belum ada pekerjaan aktif saat ini.</p>`}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-/* =========================================================
    ADMIN — SEMUA PENGAJUAN
    ========================================================= */
 function renderAdminRequests() {
   const all = getAllRequests();
-
   $('#content').innerHTML = `
     <div class="toolbar">
       <div class="search-box">
-        <input class="input" id="searchInput" placeholder="Cari judul, ID, atau nama pemilik...">
+        <input class="input" id="searchReq" placeholder="Cari judul, ID, nama pemilik, atau blok...">
       </div>
-      <select class="input" id="statusFilter" style="max-width:200px">
+      <select class="input" id="filterReqStatus" style="max-width:200px">
         <option value="all">Semua Status</option>
-        ${STATUS_ORDER.map(s => `<option value="${s}">${STATUS[s].label}</option>`).join('')}
+        ${STATUS_ALL.map(s => `<option value="${s}">${STATUS[s].label}</option>`).join('')}
+      </select>
+      <select class="input" id="filterReqPerumahan" style="max-width:220px">
+        <option value="all">Semua Perumahan</option>
+        ${state.perumahan.map(p => `<option value="${p.id}">${esc(p.nama)}</option>`).join('')}
       </select>
       <div class="spacer"></div>
       <span class="muted" style="font-size:13px" id="resultCount">${all.length} pengajuan</span>
     </div>
-
     <div class="card">
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Pemilik / Blok</th>
-              <th>Pengajuan</th>
-              <th>Kategori</th>
-              <th>Status</th>
-              <th>Pekerja</th>
-              <th>Tanggal</th>
-              <th></th>
+              <th>ID</th><th>Pemilik / Perumahan</th><th>Pengajuan</th>
+              <th>Kategori</th><th>Status</th><th>Pekerja</th><th>Tanggal</th><th></th>
             </tr>
           </thead>
           <tbody id="reqTableBody"></tbody>
@@ -736,38 +995,36 @@ function renderAdminRequests() {
       </div>
     </div>
   `;
-
-  $('#searchInput').addEventListener('input', applyAdminFilters);
-  $('#statusFilter').addEventListener('change', applyAdminFilters);
-
+  $('#searchReq').addEventListener('input', applyAdminFilters);
+  $('#filterReqStatus').addEventListener('change', applyAdminFilters);
+  $('#filterReqPerumahan').addEventListener('change', applyAdminFilters);
   applyAdminFilters();
 }
 
 function applyAdminFilters() {
-  const q = ($('#searchInput')?.value || '').toLowerCase().trim();
-  const st = $('#statusFilter')?.value || 'all';
-
+  const q = ($('#searchReq')?.value || '').toLowerCase().trim();
+  const st = $('#filterReqStatus')?.value || 'all';
+  const pm = $('#filterReqPerumahan')?.value || 'all';
   let list = getAllRequests();
   if (st !== 'all') list = list.filter(r => r.status === st);
+  if (pm !== 'all') list = list.filter(r => r.perumahanId === pm);
   if (q) {
     list = list.filter(r =>
       r.title.toLowerCase().includes(q) ||
       r.id.toLowerCase().includes(q) ||
       r.ownerName.toLowerCase().includes(q) ||
-      r.blok.toLowerCase().includes(q) ||
+      (r.blok || '').toLowerCase().includes(q) ||
       r.category.toLowerCase().includes(q)
     );
   }
-
   const body = $('#reqTableBody');
   if (!body) return;
-
   if (!list.length) {
     body.innerHTML = `<tr><td colspan="8">
       <div class="empty" style="padding:44px 20px">
         <div class="e-icon">🔍</div>
         <h4>Tidak ada hasil</h4>
-        <p>Coba ubah kata kunci atau filter status.</p>
+        <p>Coba ubah kata kunci atau filter.</p>
       </div></td></tr>`;
   } else {
     body.innerHTML = list.map(r => `
@@ -775,7 +1032,7 @@ function applyAdminFilters() {
         <td><span class="mono">#${r.id}</span></td>
         <td>
           <span class="td-title" style="max-width:160px">${esc(r.ownerName)}</span>
-          <span class="td-sub">${esc(r.blok)}</span>
+          <span class="td-sub">${esc(r.perumahanNama || '—')} · ${esc(r.blok || '')}</span>
         </td>
         <td>
           <span class="td-title">${esc(r.title)}</span>
@@ -785,12 +1042,11 @@ function applyAdminFilters() {
         <td>${statusBadge(r.status)}</td>
         <td><span class="td-sub" style="font-size:13px;color:#475569">${esc(r.assignedTo || '—')}</span></td>
         <td><span class="td-sub">${fmtDate(r.createdAt)}</span></td>
-        <td style="text-align:right">
+        <td class="row-actions">
           <button class="btn btn-ghost btn-sm" data-action="open-detail" data-id="${r.id}">Kelola</button>
         </td>
       </tr>`).join('');
   }
-
   const counter = $('#resultCount');
   if (counter) counter.textContent = `${list.length} pengajuan`;
 }
@@ -808,62 +1064,53 @@ function openDetail(id) {
         <div class="photo-item">
           <img src="${p}" alt="Foto ${i + 1}" data-action="zoom" data-src="${i}" data-req="${r.id}">
         </div>`).join('')}</div>`
-    : `<p class="muted" style="font-size:13px">Tidak ada foto yang dilampirkan.</p>`;
+    : `<p class="muted" style="font-size:13px">Tidak ada foto.</p>`;
 
   const timelineHtml = r.timeline.map(t => `
     <div class="tl-item">
-      <span class="tl-dot ${t.status}"></span>
+      <span class="tl-dot" style="border-color:${STATUS[t.status]?.color || '#6366f1'}"></span>
       <div class="tl-head">
         <strong>${esc(STATUS[t.status]?.label || t.status)}</strong>
         <span class="tl-time">${fmtDateTime(t.at)}</span>
       </div>
       <div class="tl-note">${esc(t.note)}</div>
-      <div class="tl-by">oleh ${esc(t.by)} · ${t.role === 'admin' ? 'Admin Property' : 'Pemilik Rumah'}</div>
+      <div class="tl-by">oleh ${esc(t.by)} · ${t.role === 'admin' ? 'Admin' : 'Pemilik'}</div>
     </div>`).join('');
 
   const adminPanel = isAdmin ? `
     <div class="side-box" style="margin-bottom:16px">
       <h4>⚙️ Kelola Pengajuan</h4>
-
       <div class="field">
-        <label for="mStatus">Status Pengajuan</label>
+        <label for="mStatus">Tahapan Renovasi</label>
         <select class="input" id="mStatus">
-          ${STATUS_ORDER.map(s => `<option value="${s}" ${s === r.status ? 'selected' : ''}>${STATUS[s].label}</option>`).join('')}
+          ${STATUS_ALL.map(s => `<option value="${s}" ${s === r.status ? 'selected' : ''}>${STATUS[s].label}</option>`).join('')}
         </select>
       </div>
-
       <div class="field">
         <label for="mWorker">Pekerja / Developer</label>
-        <select class="input" id="mWorker">
-          <option value="">— Belum ditugaskan —</option>
-          ${state.workers.map(w => `<option value="${esc(w.name)}" ${w.name === r.assignedTo ? 'selected' : ''}>${esc(w.name)} — ${esc(w.specialty)}</option>`).join('')}
-        </select>
+        <input class="input" id="mWorker" value="${esc(r.assignedTo || '')}" placeholder="Nama pekerja atau vendor">
       </div>
-
       <div class="field">
         <label for="mCost">Estimasi Biaya (Rp)</label>
         <input class="input" type="number" id="mCost" min="0" step="100000" value="${r.estimatedCost || 0}">
       </div>
-
       <div class="field">
         <label for="mNote">Catatan Progres</label>
-        <textarea class="input" id="mNote" rows="3" placeholder="Contoh: Material sudah dikirim ke lokasi..."></textarea>
+        <textarea class="input" id="mNote" rows="3" placeholder="Contoh: Survey selesai, lanjut perencanaan..."></textarea>
       </div>
-
       <button class="btn btn-primary btn-block" data-action="save-request" data-id="${r.id}">Simpan Perubahan</button>
     </div>
   ` : `
     <div class="side-box" style="margin-bottom:16px">
       <h4>💬 Tambah Catatan</h4>
       <div class="field">
-        <textarea class="input" id="userNote" rows="3" placeholder="Tulis pertanyaan atau informasi tambahan..."></textarea>
+        <textarea class="input" id="userNote" rows="3" placeholder="Tulis pertanyaan atau info tambahan..."></textarea>
       </div>
       <button class="btn btn-primary btn-block" data-action="add-note" data-id="${r.id}">Kirim Catatan</button>
     </div>
   `;
 
-  const modalRoot = $('#modalRoot');
-  modalRoot.innerHTML = `
+  $('#modalRoot').innerHTML = `
     <div class="modal-backdrop" id="modalBackdrop">
       <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-head">
@@ -871,37 +1118,33 @@ function openDetail(id) {
             <h3>${esc(r.title)}</h3>
             <div class="sub">
               <span class="mono">#${r.id}</span>
-              <span>${esc(r.ownerName)} · ${esc(r.blok)}</span>
+              <span>${esc(r.ownerName)} · ${esc(r.perumahanNama || '')} · ${esc(r.blok || '')}</span>
               <span>Dibuat ${fmtDate(r.createdAt)}</span>
             </div>
           </div>
           <button class="modal-close" data-action="close-modal" aria-label="Tutup">✕</button>
         </div>
-
         <div class="modal-body">
           <div class="detail-grid">
             <div>
               <div style="margin-bottom:18px">${statusBadge(r.status)}</div>
-
               <div class="info-grid">
                 <div class="info-item"><div class="k">Kategori</div><div class="v">${esc(r.category)}</div></div>
                 <div class="info-item"><div class="k">Prioritas</div><div class="v">${esc(r.priority)}</div></div>
-                <div class="info-item"><div class="k">Blok / Rumah</div><div class="v">${esc(r.blok)}</div></div>
-                <div class="info-item"><div class="k">Kontak</div><div class="v">${esc(r.phone)}</div></div>
+                <div class="info-item"><div class="k">Perumahan</div><div class="v">${esc(r.perumahanNama || '—')}</div></div>
+                <div class="info-item"><div class="k">Blok / Rumah</div><div class="v">${esc(r.blok || '—')}</div></div>
+                <div class="info-item"><div class="k">Kontak</div><div class="v">${esc(r.phone || '—')}</div></div>
                 <div class="info-item"><div class="k">Pekerja</div><div class="v">${esc(r.assignedTo || 'Belum ditugaskan')}</div></div>
                 <div class="info-item"><div class="k">Estimasi Biaya</div><div class="v">${r.estimatedCost ? rupiah(r.estimatedCost) : '—'}</div></div>
+                <div class="info-item"><div class="k">Terakhir Update</div><div class="v">${timeAgo(r.updatedAt)}</div></div>
               </div>
-
               <h4 style="margin:20px 0 10px">Deskripsi</h4>
               <div class="desc-box">${esc(r.description)}</div>
-
               <h4 style="margin:22px 0 12px">Foto Kondisi Rumah</h4>
               ${photosHtml}
-
               <h4 style="margin:24px 0 14px">Riwayat Proses</h4>
               <div class="timeline">${timelineHtml}</div>
             </div>
-
             <aside>
               ${adminPanel}
               <div class="side-box">
@@ -911,7 +1154,7 @@ function openDetail(id) {
                     <span class="muted">Total Progres</span><strong>${r.timeline.length} langkah</strong>
                   </div>
                   <div style="display:flex;justify-content:space-between;gap:10px">
-                    <span class="muted">Terakhir diperbarui</span><strong>${timeAgo(r.updatedAt)}</strong>
+                    <span class="muted">Terakhir</span><strong>${timeAgo(r.updatedAt)}</strong>
                   </div>
                   <div style="display:flex;justify-content:space-between;gap:10px">
                     <span class="muted">Lampiran foto</span><strong>${(r.photos || []).length} foto</strong>
@@ -922,31 +1165,20 @@ function openDetail(id) {
           </div>
         </div>
       </div>
-    </div>
-  `;
-
+    </div>`;
   document.body.style.overflow = 'hidden';
-
-  const backdrop = $('#modalBackdrop');
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) closeModal();
-  });
+  $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
 }
 
-function closeModal() {
-  $('#modalRoot').innerHTML = '';
-  document.body.style.overflow = '';
-}
+function closeModal() { $('#modalRoot').innerHTML = ''; document.body.style.overflow = ''; }
 
 function saveRequestChanges(id) {
   const r = state.requests.find(x => x.id === id);
   if (!r) return;
-
   const newStatus = $('#mStatus').value;
-  const worker = $('#mWorker').value;
+  const worker = $('#mWorker').value.trim();
   const cost = Number($('#mCost').value || 0);
   const note = $('#mNote').value.trim();
-
   const notes = [];
   let changed = false;
 
@@ -966,103 +1198,90 @@ function saveRequestChanges(id) {
     changed = true;
   }
   if (note) { notes.push(note); changed = true; }
-
-  if (!changed) return toast('Tidak ada perubahan untuk disimpan', 'error');
+  if (!changed) return toast('Tidak ada perubahan', 'error');
 
   r.updatedAt = new Date().toISOString();
-  r.timeline.push({
-    status: r.status,
-    note: notes.join(' '),
-    by: state.session.name,
-    role: 'admin',
-    at: r.updatedAt,
-  });
-
-  persist();
+  r.timeline.push({ status: r.status, note: notes.join(' '), by: state.session.nama, role: 'admin', at: r.updatedAt });
+  persistAll();
   closeModal();
   renderPage();
-  toast('Perubahan berhasil disimpan', 'success');
+  toast('Perubahan disimpan', 'success');
 }
 
 function addUserNote(id) {
   const r = state.requests.find(x => x.id === id);
   if (!r) return;
-
   const note = ($('#userNote')?.value || '').trim();
-  if (!note) return toast('Tulis catatan terlebih dahulu', 'error');
-
+  if (!note) return toast('Tulis catatan dulu', 'error');
   r.updatedAt = new Date().toISOString();
-  r.timeline.push({
-    status: r.status,
-    note,
-    by: state.session.name,
-    role: 'user',
-    at: r.updatedAt,
-  });
-
-  persist();
+  r.timeline.push({ status: r.status, note, by: state.session.nama, role: 'user', at: r.updatedAt });
+  persistAll();
   openDetail(id);
-  toast('Catatan berhasil dikirim', 'success');
+  toast('Catatan terkirim', 'success');
 }
 
 /* =========================================================
-   ADMIN — PEKERJA / DEVELOPER
+   USER — PROGRAM & GARANSI
    ========================================================= */
-function renderWorkers() {
+function renderProgram() {
   $('#content').innerHTML = `
-    <div class="grid-2">
+    <div class="program-hero">
+      <h2>🎁 Program Renovasi Garansi Awal</h2>
+      <p>Sebagai bentuk komitmen Dreamland terhadap kualitas hunian, setiap pemilik rumah berhak mengajukan renovasi gratis sebagai bagian dari garansi awal sesuai ketentuan yang berlaku.</p>
+    </div>
+
+    <div class="grid-2-even">
       <div class="card card-pad">
-        <div class="card-head">
-          <h3>Daftar Mitra Pelaksana</h3>
-          <span class="muted" style="font-size:13px">${state.workers.length} pekerja</span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:11px" id="workerList">
-          ${state.workers.length ? state.workers.map(w => `
-            <div class="worker-card">
-              <div class="worker-av">${esc(initials(w.name))}</div>
-              <div class="worker-body">
-                <strong>${esc(w.name)}</strong>
-                <small>${esc(w.specialty)} · ${esc(w.phone)}</small>
-              </div>
-              <button class="btn btn-danger btn-sm" data-action="delete-worker" data-id="${w.id}">Hapus</button>
-            </div>`).join('')
-            : `<p class="muted" style="font-size:13.5px">Belum ada pekerja terdaftar.</p>`}
+        <h3 style="margin-bottom:16px">Ketentuan Umum</h3>
+        <div class="term-list" style="grid-template-columns:1fr">
+          <div class="term-item">
+            <h4>1. Cakupan Garansi</h4>
+            <p>Renovasi mencakup perbaikan struktur ringan, atap, plafon, plumbing, dan instalasi listrik dasar yang mengalami kerusakan akibat cacat produksi.</p>
+          </div>
+          <div class="term-item">
+            <h4>2. Masa Berlaku</h4>
+            <p>Garansi renovasi awal berlaku sesuai ketentuan developer. Setelah masa berlaku habis, pengajuan tetap dapat diajukan sebagai permintaan perbaikan berbayar.</p>
+          </div>
+          <div class="term-item">
+            <h4>3. Alur Pengajuan</h4>
+            <p>Pemilik rumah mengajukan melalui menu "Ajukan Renovasi" di aplikasi ini. Admin akan memverifikasi dan memproses sesuai tahapan.</p>
+          </div>
+          <div class="term-item">
+            <h4>4. Hal yang Tidak Ditanggung</h4>
+            <p>Kerusakan akibat kelalaian pemilik, force majeure, atau perubahan yang tidak disetujui tidak termasuk dalam cakupan garansi.</p>
+          </div>
         </div>
       </div>
 
       <div class="card card-pad">
-        <h3 style="margin-bottom:16px">Tambah Pekerja Baru</h3>
-        <form id="workerForm">
-          <div class="field">
-            <label for="wName">Nama Pekerja / Perusahaan *</label>
-            <input class="input" id="wName" required placeholder="Contoh: CV Karya Bangun">
-          </div>
-          <div class="field">
-            <label for="wSpec">Spesialisasi *</label>
-            <input class="input" id="wSpec" required placeholder="Contoh: Renovasi & Struktur">
-          </div>
-          <div class="field">
-            <label for="wPhone">No. Telepon *</label>
-            <input class="input" id="wPhone" required placeholder="0811-2233-4455">
-          </div>
-          <button class="btn btn-primary btn-block" type="submit">Tambah Pekerja</button>
-        </form>
+        <h3 style="margin-bottom:16px">Alur Proses Renovasi</h3>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${STATUS_FLOW.map((s, i) => `
+            <div style="display:flex;gap:14px;align-items:center;padding:12px 0;${i < STATUS_FLOW.length - 1 ? 'border-bottom:1px solid #f1f5f9' : ''}">
+              <div style="width:32px;height:32px;border-radius:10px;background:${STATUS[s].bg};color:${STATUS[s].color};display:grid;place-items:center;font-weight:800;font-size:13px;flex-shrink:0">${i + 1}</div>
+              <div style="flex:1">
+                <div style="font-size:13.5px;font-weight:700">${STATUS[s].label}</div>
+                <div class="muted" style="font-size:12.5px">${
+                  s === 'diajukan' ? 'Pemilik rumah mengirim formulir pengajuan' :
+                  s === 'verifikasi' ? 'Admin memeriksa kelengkapan & kelayakan' :
+                  s === 'survei' ? 'Tim melakukan survei lokasi' :
+                  s === 'perencanaan' ? 'Rencana kerja & estimasi biaya disusun' :
+                  s === 'pengerjaan' ? 'Pekerja mulai melaksanakan renovasi' :
+                  s === 'pemeriksaan' ? 'Pemeriksaan hasil oleh admin & pemilik' :
+                  'Pekerjaan selesai, garansi ditutup'
+                }</div>
+              </div>
+            </div>`).join('')}
+        </div>
       </div>
     </div>
+
+    <div class="card card-pad" style="margin-top:20px;text-align:center">
+      <h3 style="margin-bottom:8px">Siap mengajukan renovasi?</h3>
+      <p class="muted" style="font-size:13.5px;margin-bottom:16px">Klik tombol di bawah untuk membuat pengajuan baru.</p>
+      <button class="btn btn-primary" data-action="nav" data-page="new">➕ Ajukan Renovasi Sekarang</button>
+    </div>
   `;
-
-  $('#workerForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const name = $('#wName').value.trim();
-    const specialty = $('#wSpec').value.trim();
-    const phone = $('#wPhone').value.trim();
-    if (!name || !specialty || !phone) return toast('Lengkapi semua data pekerja', 'error');
-
-    state.workers.push({ id: 'W-' + Date.now().toString(36).slice(-4).toUpperCase(), name, specialty, phone });
-    store.set(K_WORKERS, state.workers);
-    renderWorkers();
-    toast('Pekerja berhasil ditambahkan', 'success');
-  });
 }
 
 /* =========================================================
@@ -1071,18 +1290,20 @@ function renderWorkers() {
 function renderHelp() {
   const isAdmin = state.session.role === 'admin';
 
-  const userSteps = [
-    ['Buat Pengajuan', 'Masuk ke menu <b>Ajukan Perbaikan</b>, isi judul, kategori, prioritas, deskripsi kerusakan, dan unggah foto kondisi rumah (maks. 5 foto).'],
-    ['Tunggu Verifikasi', 'Admin property akan memeriksa pengajuan Anda. Status akan berubah menjadi <b>Terverifikasi</b> jika disetujui.'],
-    ['Pantau Progres', 'Buka menu <b>Pengajuan Saya</b> lalu klik salah satu kartu untuk melihat riwayat proses secara lengkap.'],
-    ['Tambah Catatan', 'Anda dapat menambahkan catatan atau pertanyaan pada halaman detail pengajuan kapan saja.'],
+  const adminSteps = [
+    ['Kelola Perumahan', 'Tambahkan setiap perumahan yang Anda kelola beserta lokasi dan total unit.'],
+    ['Kelola Pemilik Rumah', 'Buatkan akun login untuk pemilik rumah. Berikan username & password kepada mereka.'],
+    ['Verifikasi Pengajuan', 'Buka menu <b>Pengajuan Renovasi</b>, tinjau detail & foto, lalu ubah status menjadi <b>Verifikasi</b>.'],
+    ['Update Tahapan', 'Perbarui status progresif: Survei → Perencanaan → Pengerjaan → Pemeriksaan → Selesai.'],
+    ['Catat Progres', 'Setiap update, tulis catatan agar pemilik rumah melihat perkembangan terkini.'],
   ];
 
-  const adminSteps = [
-    ['Verifikasi Pengajuan', 'Buka <b>Semua Pengajuan</b>, tinjau detail dan foto, lalu ubah status menjadi <b>Terverifikasi</b> atau <b>Ditolak</b>.'],
-    ['Tugaskan Pekerja', 'Pada panel kelola, pilih pekerja/developer yang sesuai dari daftar mitra pelaksana.'],
-    ['Perbarui Progres', 'Ubah status menjadi <b>Sedang Dikerjakan</b> dan tulis catatan progres setiap ada perkembangan.'],
-    ['Selesaikan Pekerjaan', 'Setelah pekerjaan rampung, ubah status menjadi <b>Selesai</b> dan isi estimasi biaya akhir.'],
+  const userSteps = [
+    ['Login', 'Masuk dengan username dan password yang diberikan oleh admin/pengelola.'],
+    ['Baca Program Garansi', 'Pelajari ketentuan program renovasi garansi awal di menu Program & Garansi.'],
+    ['Ajukan Renovasi', 'Isi formulir lengkap dengan judul, kategori, prioritas, deskripsi, dan foto kondisi rumah.'],
+    ['Pantau Progres', 'Buka menu Pengajuan Saya untuk melihat tahapan terkini secara real-time.'],
+    ['Tambah Catatan', 'Anda dapat menambahkan pertanyaan atau info tambahan pada halaman detail pengajuan.'],
   ];
 
   const steps = isAdmin ? adminSteps : userSteps;
@@ -1092,7 +1313,7 @@ function renderHelp() {
       <div class="card card-pad">
         <h3 style="margin-bottom:6px">Alur Penggunaan</h3>
         <p class="muted" style="font-size:13.5px;margin-bottom:18px">
-          ${isAdmin ? 'Panduan untuk Admin Property dalam mengelola pengajuan maintenance.' : 'Panduan untuk pemilik rumah dalam mengajukan perbaikan.'}
+          ${isAdmin ? 'Panduan untuk Admin / Pengelola Dreamland.' : 'Panduan untuk pemilik rumah.'}
         </p>
         ${steps.map((s, i) => `
           <div class="step">
@@ -1103,18 +1324,21 @@ function renderHelp() {
 
       <div>
         <div class="card card-pad" style="margin-bottom:20px">
-          <h3 style="margin-bottom:14px">Arti Status</h3>
-          <div style="display:flex;flex-direction:column;gap:13px">
-            ${STATUS_ORDER.map(s => `
+          <h3 style="margin-bottom:14px">Arti Tahapan</h3>
+          <div style="display:flex;flex-direction:column;gap:11px">
+            ${STATUS_ALL.map(s => `
               <div style="display:flex;gap:12px;align-items:flex-start">
                 <span class="mini-dot" style="background:${STATUS[s].color};margin-top:7px"></span>
                 <div>
                   <div style="font-size:13.5px;font-weight:600">${STATUS[s].label}</div>
                   <div class="muted" style="font-size:12.5px">${
-                    s === 'menunggu' ? 'Pengajuan baru, menunggu pemeriksaan admin.' :
-                    s === 'diverifikasi' ? 'Pengajuan disetujui, menunggu penjadwalan pekerja.' :
-                    s === 'dikerjakan' ? 'Pekerja sedang melaksanakan perbaikan.' :
-                    s === 'selesai' ? 'Pekerjaan telah rampung dan ditutup.' :
+                    s === 'diajukan' ? 'Pengajuan baru, menunggu diperiksa admin.' :
+                    s === 'verifikasi' ? 'Admin memeriksa kelengkapan pengajuan.' :
+                    s === 'survei' ? 'Tim sedang atau akan melakukan survei lokasi.' :
+                    s === 'perencanaan' ? 'Rencana kerja & RAB disusun.' :
+                    s === 'pengerjaan' ? 'Pekerja sedang melaksanakan renovasi.' :
+                    s === 'pemeriksaan' ? 'Pemeriksaan hasil pekerjaan.' :
+                    s === 'selesai' ? 'Pekerjaan dinyatakan selesai.' :
                     'Pengajuan tidak dapat diproses.'
                   }</div>
                 </div>
@@ -1125,11 +1349,11 @@ function renderHelp() {
         <div class="card card-pad">
           <h3 style="margin-bottom:12px">Kontak Pengelola</h3>
           <p class="muted" style="font-size:13.5px;line-height:1.65;margin-bottom:14px">
-            Butuh bantuan darurat? Hubungi kantor pengelola perumahan.
+            Butuh bantuan? Hubungi kantor pengelola Dreamland.
           </p>
           <div class="info-item" style="margin-bottom:10px"><div class="k">Telepon</div><div class="v">021-555-0123</div></div>
-          <div class="info-item" style="margin-bottom:10px"><div class="k">Email</div><div class="v">admin@myhome.id</div></div>
-          <div class="info-item"><div class="k">Jam Layanan</div><div class="v">Senin – Sabtu, 08.00 – 17.00 WIB</div></div>
+          <div class="info-item" style="margin-bottom:10px"><div class="k">Email</div><div class="v">admin@infodreamland.my.id</div></div>
+          <div class="info-item"><div class="k">Website</div><div class="v">infodreamland.my.id</div></div>
         </div>
       </div>
     </div>
@@ -1139,26 +1363,14 @@ function renderHelp() {
 /* =========================================================
    SIDEBAR (mobile)
    ========================================================= */
-function openSidebar() {
-  $('#sidebar').classList.add('open');
-  $('#sidebarBackdrop').classList.add('show');
-}
-function closeSidebar() {
-  $('#sidebar').classList.remove('open');
-  $('#sidebarBackdrop').classList.remove('show');
-}
+function openSidebar() { $('#sidebar').classList.add('open'); $('#sidebarBackdrop').classList.add('show'); }
+function closeSidebar() { $('#sidebar').classList.remove('open'); $('#sidebarBackdrop').classList.remove('show'); }
 
 /* =========================================================
    LIGHTBOX
    ========================================================= */
-function openLightbox(src) {
-  $('#lightboxImg').src = src;
-  $('#lightbox').classList.remove('hidden');
-}
-function closeLightbox() {
-  $('#lightbox').classList.add('hidden');
-  $('#lightboxImg').src = '';
-}
+function openLightbox(src) { $('#lightboxImg').src = src; $('#lightbox').classList.remove('hidden'); }
+function closeLightbox() { $('#lightbox').classList.add('hidden'); $('#lightboxImg').src = ''; }
 
 /* =========================================================
    EVENT DELEGATION
@@ -1169,33 +1381,47 @@ document.addEventListener('click', (e) => {
   const action = el.dataset.action;
 
   switch (action) {
-    case 'nav':
-      goTo(el.dataset.page);
-      break;
+    case 'nav': goTo(el.dataset.page); break;
+    case 'logout': logout(); break;
+    case 'open-detail': openDetail(el.dataset.id); break;
+    case 'close-modal': closeModal(); break;
+    case 'save-request': saveRequestChanges(el.dataset.id); break;
+    case 'add-note': addUserNote(el.dataset.id); break;
 
-    case 'logout':
-      logout();
+    case 'add-perumahan': openPerumahanModal(null); break;
+    case 'edit-perumahan': openPerumahanModal(el.dataset.id); break;
+    case 'delete-perumahan': {
+      const id = el.dataset.id;
+      const p = state.perumahan.find(x => x.id === id);
+      if (!p) return;
+      const used = state.users.some(u => u.perumahanId === id) || state.requests.some(r => r.perumahanId === id);
+      if (used) return toast('Tidak bisa dihapus: masih ada pemilik/pengajuan terkait', 'error');
+      if (!confirm(`Hapus perumahan "${p.nama}"?`)) return;
+      state.perumahan = state.perumahan.filter(x => x.id !== id);
+      persistAll();
+      renderPerumahan();
+      toast('Perumahan dihapus', 'success');
       break;
+    }
 
-    case 'open-detail':
-      openDetail(el.dataset.id);
+    case 'add-pemilik': openPemilikModal(null); break;
+    case 'edit-pemilik': openPemilikModal(el.dataset.id); break;
+    case 'delete-pemilik': {
+      const id = el.dataset.id;
+      const u = state.users.find(x => x.id === id);
+      if (!u) return;
+      const hasReq = state.requests.some(r => r.pemilikId === id);
+      if (hasReq) return toast('Tidak bisa dihapus: pemilik masih punya pengajuan', 'error');
+      if (!confirm(`Hapus akun "${u.nama}"?`)) return;
+      state.users = state.users.filter(x => x.id !== id);
+      persistAll();
+      renderPemilik();
+      toast('Pemilik dihapus', 'success');
       break;
-
-    case 'close-modal':
-      closeModal();
-      break;
-
-    case 'save-request':
-      saveRequestChanges(el.dataset.id);
-      break;
-
-    case 'add-note':
-      addUserNote(el.dataset.id);
-      break;
+    }
 
     case 'del-photo': {
-      const idx = Number(el.dataset.index);
-      state.draftPhotos.splice(idx, 1);
+      state.draftPhotos.splice(Number(el.dataset.index), 1);
       renderDraftPhotos();
       break;
     }
@@ -1218,22 +1444,9 @@ document.addEventListener('click', (e) => {
       renderUserList(getMyRequests(), s);
       break;
     }
-
-    case 'delete-worker': {
-      const id = el.dataset.id;
-      const w = state.workers.find(x => x.id === id);
-      if (!w) return;
-      if (!confirm(`Hapus pekerja "${w.name}"?`)) return;
-      state.workers = state.workers.filter(x => x.id !== id);
-      store.set(K_WORKERS, state.workers);
-      renderWorkers();
-      toast('Pekerja dihapus', 'success');
-      break;
-    }
   }
 });
 
-/* Lightbox close */
 $('#lightbox').addEventListener('click', closeLightbox);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -1243,44 +1456,34 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-/* Sidebar mobile */
 $('#menuToggle').addEventListener('click', openSidebar);
 $('#sidebarBackdrop').addEventListener('click', closeSidebar);
 
-/* Login: role switch */
-$('#roleSwitch').addEventListener('click', (e) => {
-  const btn = e.target.closest('.role-btn');
-  if (!btn) return;
-  state.loginRole = btn.dataset.role;
-  $$('.role-btn').forEach(b => b.classList.toggle('active', b === btn));
-});
-
-/* Login: fill demo */
+/* ---------------- Login ---------------- */
 $('#fillDemo').addEventListener('click', () => {
-  const isAdmin = state.loginRole === 'admin';
-  $('#loginEmail').value = isAdmin ? 'admin@myhome.id' : 'budi@myhome.id';
-  $('#loginPassword').value = '123456';
-  toast('Akun demo terisi otomatis', 'info');
+  $('#loginUsername').value = 'admin';
+  $('#loginPassword').value = 'admin123';
+  toast('Akun admin terisi otomatis', 'info');
 });
 
-/* Login submit */
 $('#loginForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  const email = $('#loginEmail').value.trim().toLowerCase();
-  const pass = $('#loginPassword').value;
+  const username = $('#loginUsername').value.trim().toLowerCase();
+  const password = $('#loginPassword').value;
 
-  const user = DEMO_USERS.find(u => u.email === email && u.password === pass);
-  if (!user) {
-    return toast('Email atau password salah. Gunakan akun demo di bawah.', 'error');
-  }
-  if (user.role !== state.loginRole) {
-    return toast(`Akun ini terdaftar sebagai ${user.role === 'admin' ? 'Admin Property' : 'Pemilik Rumah'}. Ganti tab peran terlebih dahulu.`, 'error');
-  }
+  if (!username || !password) return toast('Username dan password wajib diisi.', 'error');
 
-  state.session = { role: user.role, name: user.name, email: user.email, blok: user.blok, phone: user.phone };
+  const user = state.users.find(u => u.username === username && u.password === password);
+  if (!user) return toast('Username atau password salah.', 'error');
+
+  state.session = {
+    id: user.id, role: user.role, nama: user.nama, username: user.username,
+    perumahanId: user.perumahanId, blok: user.blok,
+    phone: user.phone, email: user.email,
+  };
   store.set(K_SESSION, state.session);
   $('#loginPassword').value = '';
-  toast(`Selamat datang, ${user.name.split(' ')[0]}!`, 'success');
+  toast(`Selamat datang, ${user.nama.split(' ')[0]}!`, 'success');
   enterApp();
 });
 
@@ -1288,6 +1491,22 @@ $('#loginForm').addEventListener('submit', (e) => {
    INIT
    ========================================================= */
 function init() {
+  // Perumahan
+  let perumahan = store.get(K_PERUMAHAN, null);
+  if (!Array.isArray(perumahan) || !perumahan.length) {
+    perumahan = seedPerumahan();
+    store.set(K_PERUMAHAN, perumahan);
+  }
+  state.perumahan = perumahan;
+
+  // Users
+  let users = store.get(K_USERS, null);
+  if (!Array.isArray(users) || !users.length) {
+    users = seedUsers();
+    store.set(K_USERS, users);
+  }
+  state.users = users;
+
   // Requests
   let reqs = store.get(K_REQ, null);
   if (!Array.isArray(reqs) || !reqs.length) {
@@ -1295,14 +1514,6 @@ function init() {
     store.set(K_REQ, reqs);
   }
   state.requests = reqs;
-
-  // Workers
-  let workers = store.get(K_WORKERS, null);
-  if (!Array.isArray(workers) || !workers.length) {
-    workers = seedWorkers();
-    store.set(K_WORKERS, workers);
-  }
-  state.workers = workers;
 
   // Session
   const session = store.get(K_SESSION, null);
