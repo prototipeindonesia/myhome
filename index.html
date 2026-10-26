@@ -1,103 +1,139 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dreamland — Property Management (Retensi)</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dreamland — Property Management (Retensi)</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- ==================== LOGIN ==================== -->
-<div class="login-screen" id="loginScreen">
-  <div class="login-visual">
-    <div class="blob b1"></div>
-    <div class="blob b2"></div>
-    <div class="lv-brand">
-      <div class="logo-mark">🏘️</div>
-      <span>Dreamland</span>
+  <!-- ==================== HALAMAN LOGIN ==================== -->
+  <div class="login-screen" id="loginScreen">
+    <!-- Sisi Kiri: Visual & Branding -->
+    <div class="login-visual">
+      <div class="blob b1"></div>
+      <div class="blob b2"></div>
+      <div class="lv-brand">
+        <div class="logo-mark">🏘️</div>
+        <span>Dreamland</span>
+      </div>
+      <div class="lv-body">
+        <h1>Kelola perumahan &<br>retensi rumah dalam satu sistem.</h1>
+        <p>Platform terpusat untuk mengelola data perumahan, pemilik rumah, dan pengajuan retensi (garansi 100 hari).</p>
+        <ul class="lv-list">
+          <li><span>✓</span> Multi perumahan dalam satu dashboard</li>
+          <li><span>✓</span> Pengajuan retensi online & transparan</li>
+          <li><span>✓</span> Pantau sisa masa garansi retensi (100 hari)</li>
+          <li><span>✓</span> Riwayat dan dokumentasi progres tersimpan rapi</li>
+        </ul>
+      </div>
+      <div class="lv-foot">© 2025 Dreamland — infodreamland.my.id</div>
     </div>
-    <div class="lv-body">
-      <h1>Kelola perumahan &<br>retensi rumah dalam satu sistem.</h1>
-      <p>Platform terpusat untuk mengelola data perumahan, pemilik rumah, dan pengajuan retensi (garansi 100 hari).</p>
-      <ul class="lv-list">
-        <li><span>✓</span> Multi perumahan dalam satu dashboard</li>
-        <li><span>✓</span> Pengajuan retensi online & transparan</li>
-        <li><span>✓</span> Pantau sisa masa garansi retensi</li>
-        <li><span>✓</span> Riwayat dan dokumentasi progres tersimpan rapi</li>
-      </ul>
-    </div>
-    <div class="lv-foot">© 2025 Dreamland — infodreamland.my.id</div>
-  </div>
 
-  <div class="login-panel">
-    <div class="login-card">
-      <h2>Selamat datang 👋</h2>
-      <p class="muted">Masuk untuk melanjutkan ke dashboard Anda.</p>
+    <!-- Sisi Kanan: Form Login -->
+    <div class="login-panel">
+      <div class="login-card">
+        <h2>Selamat datang 👋</h2>
+        <p class="muted">Masuk untuk melanjutkan ke dashboard Anda.</p>
 
-      <form id="loginForm" autocomplete="off" novalidate>
-        <div class="field">
-          <label for="loginUsername">Username</label>
-          <input class="input" type="text" id="loginUsername" placeholder="username Anda" autocomplete="username">
+        <form id="loginForm" autocomplete="off" novalidate>
+          <div class="field">
+            <label for="loginUsername">Username</label>
+            <input class="input" type="text" id="loginUsername" placeholder="Masukkan username" autocomplete="username" required>
+          </div>
+          <div class="field">
+            <label for="loginPassword">Password</label>
+            <input class="input" type="password" id="loginPassword" placeholder="••••••" autocomplete="current-password" required>
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">Masuk</button>
+        </form>
+
+        <div class="demo-box">
+          <div class="demo-title">Akun Demo</div>
+          <div class="demo-row">
+            <span>Admin / Pengelola</span>
+            <code>admin / admin123</code>
+          </div>
+          <div class="demo-row">
+            <span>Pemilik Rumah</span>
+            <code>budi / 123456</code>
+          </div>
+          <button type="button" class="btn btn-ghost btn-block" id="fillDemo" style="margin-top: 10px;">
+            Isi Otomatis (Admin)
+          </button>
         </div>
-        <div class="field">
-          <label for="loginPassword">Password</label>
-          <input class="input" type="password" id="loginPassword" placeholder="••••••" autocomplete="current-password">
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== APLIKASI UTAMA (Setelah Login) ==================== -->
+  <div class="app hidden" id="app">
+    
+    <!-- Backdrop untuk Sidebar di Mobile -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- Sidebar Navigasi -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-mark sm">🏘️</div>
+        <div class="brand-text">
+          <strong>Dreamland</strong>
+          <small>Property Management</small>
         </div>
-        <button class="btn btn-primary btn-block" type="submit">Masuk</button>
-      </form>
-
-      <div class="demo-box">
-        <div class="demo-title">Akun demo</div>
-        <div class="demo-row"><span>Admin / Pengelola</span><code>admin / admin123</code></div>
-        <div class="demo-row"><span>Pemilik Rumah</span><code>budi / 123456</code></div>
-        <button type="button" class="btn btn-ghost btn-block" id="fillDemo">Isi otomatis (Admin)</button>
       </div>
+      
+      <!-- Menu Navigasi Dinamis -->
+      <nav class="nav" id="navList"></nav>
+      
+      <!-- Profil User & Tombol Logout -->
+      <div class="sidebar-foot">
+        <div class="user-chip" id="userChip"></div>
+        <button class="btn btn-ghost btn-block" data-action="logout">Keluar</button>
+      </div>
+    </aside>
+
+    <!-- Area Konten Utama -->
+    <div class="main">
+      
+      <!-- Topbar (Header) -->
+      <header class="topbar">
+        <button class="hamburger" id="menuToggle" aria-label="Buka Menu">☰</button>
+        <div class="topbar-titles">
+          <h2 id="pageTitle">Dashboard</h2>
+          <p id="pageSubtitle"></p>
+        </div>
+        <div class="topbar-right">
+          <span class="role-badge" id="roleBadge"></span>
+        </div>
+      </header>
+
+      <!-- Tempat Render Halaman (Dashboard, Perumahan, dll) -->
+      <main class="content" id="content"></main>
     </div>
   </div>
-</div>
 
-<!-- ==================== APP ==================== -->
-<div class="app hidden" id="app">
-  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
-
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand">
-      <div class="logo-mark sm">🏘️</div>
-      <div class="brand-text">
-        <strong>Dreamland</strong>
-        <small>Property Management</small>
-      </div>
-    </div>
-    <nav class="nav" id="navList"></nav>
-    <div class="sidebar-foot">
-      <div class="user-chip" id="userChip"></div>
-      <button class="btn btn-ghost btn-block" data-action="logout">Keluar</button>
-    </div>
-  </aside>
-
-  <div class="main">
-    <header class="topbar">
-      <button class="hamburger" id="menuToggle" aria-label="Menu">☰</button>
-      <div class="topbar-titles">
-        <h2 id="pageTitle">Dashboard</h2>
-        <p id="pageSubtitle"></p>
-      </div>
-      <div class="topbar-right">
-        <span class="role-badge" id="roleBadge"></span>
-      </div>
-    </header>
-    <main class="content" id="content"></main>
+  <!-- ==================== ELEMEN GLOBAL (Modal, Lightbox, Toast) ==================== -->
+  
+  <!-- Root untuk Modal (Pop-up Form/Detail) -->
+  <div id="modalRoot"></div>
+  
+  <!-- Lightbox untuk Zoom Foto -->
+  <div class="lightbox hidden" id="lightbox">
+    <img id="lightboxImg" alt="Foto Diperbesar">
   </div>
-</div>
+  
+  <!-- Container untuk Notifikasi Toast -->
+  <div class="toast-wrap" id="toastWrap"></div>
 
-<div id="modalRoot"></div>
-<div class="lightbox hidden" id="lightbox"><img id="lightboxImg" alt="Foto"></div>
-<div class="toast-wrap" id="toastWrap"></div>
-
-<script src="app.js"></script>
+  <!-- Script Utama -->
+  <script src="app.js"></script>
 </body>
 </html>
