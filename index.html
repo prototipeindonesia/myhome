@@ -110,8 +110,32 @@
           <h2 id="pageTitle">Dashboard</h2>
           <p id="pageSubtitle"></p>
         </div>
+        
+        <!-- Area Kanan Topbar (Notifikasi & Role) -->
         <div class="topbar-right">
+          
+          <!-- [NEW] Tombol Lonceng Notifikasi -->
+          <div style="position: relative;">
+            <button class="btn btn-ghost btn-sm" id="notifBtn" style="padding: 8px 12px; border-radius: 50%; position: relative; background: #fff;">
+              🔔
+              <span id="notifBadge" class="notif-badge hidden">0</span>
+            </button>
+            
+            <!-- [NEW] Dropdown Notifikasi -->
+            <div id="notifDropdown" class="notif-dropdown hidden">
+              <div class="notif-header">
+                <strong>Notifikasi</strong>
+                <button class="link" id="markAllRead" style="font-size: 12px;">Tandai semua dibaca</button>
+              </div>
+              <div id="notifList" class="notif-list">
+                <!-- List notifikasi akan dirender oleh JS -->
+              </div>
+            </div>
+          </div>
+          
+          <!-- Badge Role (Admin / Pemilik) -->
           <span class="role-badge" id="roleBadge"></span>
+          
         </div>
       </header>
 
