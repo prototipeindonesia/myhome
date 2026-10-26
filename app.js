@@ -1,9 +1,8 @@
 /* =========================================================
    Dreamland — Property Management CRM (Retensi Edition)
-   Final Version - Bug Fixed & Optimized
+   Final Version - Anti Blank Screen & Robust Data
    ========================================================= */
 
-/* ---------------- Status & Konstanta ---------------- */
 const STATUS = {
   diajukan:    { label: 'Diajukan',    short: 'Diajukan',    color: '#94a3b8', bg: '#f1f5f9' },
   verifikasi:  { label: 'Verifikasi',  short: 'Verifikasi',  color: '#f59e0b', bg: '#fef3c7' },
@@ -13,11 +12,9 @@ const STATUS = {
   selesai:     { label: 'Selesai',     short: 'Selesai',     color: '#10b981', bg: '#d1fae5' },
   ditolak:     { label: 'Ditolak',     short: 'Ditolak',     color: '#ef4444', bg: '#fee2e2' },
 };
-// Poin 5: Perencanaan dihapus
 const STATUS_FLOW = ['diajukan', 'verifikasi', 'survei', 'pengerjaan', 'pemeriksaan', 'selesai'];
 const STATUS_ALL  = [...STATUS_FLOW, 'ditolak'];
 
-// Poin 1: Renovasi diganti Retensi
 const CATEGORIES = [
   'Retensi Struktur', 'Retensi Atap', 'Retensi Plafon',
   'Retensi Plumbing', 'Retensi Listrik', 'Retensi Pengecatan',
@@ -64,6 +61,7 @@ const initials = (name) => String(name || '?').split(' ').filter(Boolean).slice(
 const statusBadge = (s) => `<span class="status ${s}">${STATUS[s]?.label || s}</span>`;
 
 function timeAgo(iso) {
+  if(!iso) return '-';
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
   if (m < 1) return 'baru saja';
@@ -75,12 +73,11 @@ function timeAgo(iso) {
   return fmtDate(iso);
 }
 
-// Poin 3 & 4: Hitung Sisa Garansi Retensi 100 Hari
 function getWarrantyStatus(tglSerahTerima) {
   if (!tglSerahTerima) return { daysLeft: 0, expired: true, text: 'Tanggal serah terima belum diatur' };
   const handover = new Date(tglSerahTerima).getTime();
   const now = new Date().getTime();
-  const limit = handover + (100 * 24 * 60 * 60 * 1000); // 100 hari
+  const limit = handover + (100 * 24 * 60 * 60 * 1000);
   const diff = limit - now;
   
   if (diff <= 0) {
@@ -90,17 +87,18 @@ function getWarrantyStatus(tglSerahTerima) {
   return { daysLeft, expired: false, text: `Sisa masa retensi: ${daysLeft} hari lagi` };
 }
 
-/* ---------------- Storage & State ---------------- */
+/* ---------------- Storage & State (Versi v3 - Bersih) ---------------- */
 const store = {
   get(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } },
   set(k, v)   { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { toast('Penyimpanan penuh.', 'error'); return false; } },
   del(k)      { localStorage.removeItem(k); },
 };
 
-const K_USERS    = 'dl_users_v2';
-const K_PERUMAHAN= 'dl_perumahan_v2';
-const K_REQ      = 'dl_requests_v2';
-const K_SESSION  = 'dl_session_v2';
+// Gunakan v3 untuk memastikan data lama tereset
+const K_USERS    = 'dl_users_v3';
+const K_PERUMAHAN= 'dl_perumahan_v3';
+const K_REQ      = 'dl_requests_v3';
+const K_SESSION  = 'dl_session_v3';
 
 const state = {
   session: null,
@@ -192,6 +190,7 @@ function seedRequests() {
 /* ---------------- Toast & Persistence ---------------- */
 function toast(msg, type = 'info') {
   const wrap = $('#toastWrap');
+  if(!wrap) return;
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   const icon = type === 'success' ? '✓' : type === 'error' ? '!' : 'i';
@@ -212,25 +211,33 @@ function persistAll() {
 }
 
 /* ---------------- Auth & Navigation ---------------- */
-function showLogin() { $('#loginScreen').classList.remove('hidden'); $('#app').classList.add('hidden'); }
+function showLogin() { 
+  const l = $('#loginScreen'); if(l) l.classList.remove('hidden'); 
+  const a = $('#app'); if(a) a.classList.add('hidden'); 
+}
+
 function enterApp() {
-  $('#loginScreen').classList.add('hidden');
-  $('#app').classList.remove('hidden');
+  const l = $('#loginScreen'); if(l) l.classList.add('hidden');
+  const a = $('#app'); if(a) a.classList.remove('hidden');
   state.page = 'dashboard';
   renderNav(); renderShellUser(); renderPage();
 }
 
 function renderShellUser() {
   const s = state.session;
-  $('#userChip').innerHTML = `
+  if(!s) return;
+  const chip = $('#userChip');
+  if(chip) chip.innerHTML = `
     <div class="avatar">${esc(initials(s.nama))}</div>
     <div class="uc-text">
       <strong>${esc(s.nama)}</strong>
       <small>${s.role === 'admin' ? 'Admin / Pengelola' : (s.blok ? 'Blok ' + esc(s.blok) : 'Pemilik Rumah')}</small>
     </div>`;
   const badge = $('#roleBadge');
-  badge.textContent = s.role === 'admin' ? 'Admin / Pengelola' : 'Pemilik Rumah';
-  badge.className = 'role-badge' + (s.role === 'admin' ? ' admin' : '');
+  if(badge) {
+    badge.textContent = s.role === 'admin' ? 'Admin / Pengelola' : 'Pemilik Rumah';
+    badge.className = 'role-badge' + (s.role === 'admin' ? ' admin' : '');
+  }
 }
 
 function logout() {
@@ -242,8 +249,10 @@ function logout() {
 }
 
 function renderNav() {
+  if(!state.session) return;
   const items = NAV[state.session.role] || NAV.user;
-  $('#navList').innerHTML = items.map(it => `
+  const navList = $('#navList');
+  if(navList) navList.innerHTML = items.map(it => `
     <button class="nav-item ${it.id === state.page ? 'active' : ''}" data-action="nav" data-page="${it.id}">
       <span class="ico">${it.icon}</span><span>${it.label}</span>
     </button>`).join('');
@@ -253,21 +262,29 @@ function goTo(page) { state.page = page; renderNav(); renderPage(); }
 
 function renderPage() {
   const meta = PAGE_META[state.page] || PAGE_META.dashboard;
-  $('#pageTitle').textContent = meta.title;
-  $('#pageSubtitle').textContent = meta.sub;
+  const pt = $('#pageTitle'); if(pt) pt.textContent = meta.title;
+  const ps = $('#pageSubtitle'); if(ps) ps.textContent = meta.sub;
   closeSidebar();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
+  if(!state.session) return;
   const role = state.session.role;
-  switch (state.page) {
-    case 'dashboard': return role === 'admin' ? renderAdminDashboard() : renderUserDashboard();
-    case 'perumahan': return renderPerumahan();
-    case 'pemilik':   return renderPemilik();
-    case 'new':       return renderNewRequest();
-    case 'requests':  return role === 'admin' ? renderAdminRequests() : renderUserRequests();
-    case 'program':   return renderProgram();
-    case 'help':      return renderHelp();
-    default:          return role === 'admin' ? renderAdminDashboard() : renderUserDashboard();
+  
+  try {
+    switch (state.page) {
+      case 'dashboard': return role === 'admin' ? renderAdminDashboard() : renderUserDashboard();
+      case 'perumahan': return renderPerumahan();
+      case 'pemilik':   return renderPemilik();
+      case 'new':       return renderNewRequest();
+      case 'requests':  return role === 'admin' ? renderAdminRequests() : renderUserRequests();
+      case 'program':   return renderProgram();
+      case 'help':      return renderHelp();
+      default:          return role === 'admin' ? renderAdminDashboard() : renderUserDashboard();
+    }
+  } catch (error) {
+    console.error("Render Error:", error);
+    const content = $('#content');
+    if(content) content.innerHTML = `<div class="card card-pad"><div class="empty"><h4>Terjadi Kesalahan Sistem</h4><p>${error.message}</p></div></div>`;
   }
 }
 
@@ -278,11 +295,9 @@ function countBy(list) {
   list.forEach(r => { if (c[r.status] !== undefined) c[r.status]++; });
   return c;
 }
-const getMyRequests = () => state.requests
-  .filter(r => r.pemilikId === state.session.id)
-  .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-const getAllRequests = () => [...state.requests].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-const getPerumahanName = (id) => state.perumahan.find(p => p.id === id)?.nama || '—';
+const getMyRequests = () => (state.requests || []).filter(r => r.pemilikId === state.session.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+const getAllRequests = () => [...(state.requests || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+const getPerumahanName = (id) => (state.perumahan || []).find(p => p.id === id)?.nama || '—';
 
 function statGrid(items) {
   return `<div class="stats">${items.map(i => `
@@ -304,17 +319,17 @@ function emptyState(icon, title, desc, btnLabel, btnPage) {
 }
 
 /* =========================================================
-   DASHBOARD (ADMIN & USER)
+   DASHBOARD
    ========================================================= */
 function renderAdminDashboard() {
   const all = getAllRequests();
   const c = countBy(all);
   const total = all.length || 1;
-  const totalPemilik = state.users.filter(u => u.role === 'user').length;
+  const totalPemilik = (state.users || []).filter(u => u.role === 'user').length;
   
   $('#content').innerHTML = `
     ${statGrid([
-      { label: 'Total Perumahan',   value: state.perumahan.length, icon: '🏘️', cls: 'icon-indigo' },
+      { label: 'Total Perumahan',   value: (state.perumahan || []).length, icon: '🏘️', cls: 'icon-indigo' },
       { label: 'Total Pembeli',     value: totalPemilik,           icon: '👥', cls: 'icon-blue' },
       { label: 'Pengajuan Aktif',   value: c.pengerjaan + c.pemeriksaan + c.survei, icon: '🔧', cls: 'icon-purple' },
       { label: 'Perlu Verifikasi',  value: c.diajukan + c.verifikasi, icon: '⏳', cls: 'icon-amber' },
@@ -356,7 +371,6 @@ function renderUserDashboard() {
   $('#pageSubtitle').textContent = `Halo ${firstName}, pantau pengajuan retensi Anda di sini.`;
 
   $('#content').innerHTML = `
-    <!-- Widget Countdown Garansi -->
     <div class="countdown-widget ${warranty.expired ? 'expired' : ''}">
       <div>
         <h4>Status Garansi Retensi (100 Hari)</h4>
@@ -399,7 +413,7 @@ function renderUserDashboard() {
 function miniRow(r) {
   return `
     <div class="mini-row" data-action="open-detail" data-id="${r.id}">
-      <span class="mini-dot" style="background:${STATUS[r.status].color}"></span>
+      <span class="mini-dot" style="background:${STATUS[r.status]?.color || '#ccc'}"></span>
       <div class="mini-body">
         <strong>${esc(r.title)}</strong>
         <small>${esc(r.category)} · ${timeAgo(r.createdAt)}</small>
@@ -434,35 +448,42 @@ function renderPerumahan() {
       </div>
     </div>
   `;
-  $('#searchPerumahan').addEventListener('input', applyFilterPerumahan);
+  const searchEl = $('#searchPerumahan');
+  if (searchEl) searchEl.addEventListener('input', applyFilterPerumahan);
   applyFilterPerumahan();
 }
 
 function applyFilterPerumahan() {
-  const q = ($('#searchPerumahan')?.value || '').toLowerCase().trim();
-  const list = state.perumahan.filter(p => !q || p.nama.toLowerCase().includes(q) || p.lokasi.toLowerCase().includes(q));
-  const tbody = $('#perumahanTbody');
-  if (!tbody) return;
-  
-  if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty" style="padding:44px 20px"><div class="e-icon">🏘️</div><h4>Tidak ada perumahan</h4></div></td></tr>`;
-    return;
+  try {
+    const q = ($('#searchPerumahan')?.value || '').toLowerCase().trim();
+    const list = (state.perumahan || []).filter(p => !q || String(p.nama || '').toLowerCase().includes(q) || String(p.lokasi || '').toLowerCase().includes(q));
+    const tbody = $('#perumahanTbody');
+    if (!tbody) return;
+    
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty" style="padding:44px 20px"><div class="e-icon">🏘️</div><h4>Tidak ada perumahan</h4><p>Silakan tambah perumahan baru.</p></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = list.map(p => {
+      const count = (state.users || []).filter(u => u.role === 'user' && u.perumahanId === p.id).length;
+      return `<tr>
+        <td><span class="mono">${p.id}</span></td>
+        <td><span class="td-title">${esc(p.nama)}</span></td>
+        <td><span class="td-sub" style="font-size:13px;color:#475569">${esc(p.lokasi)}</span></td>
+        <td><strong>${p.totalUnit || 0}</strong> unit</td>
+        <td><strong>${count}</strong> orang</td>
+        <td class="row-actions">
+          <button class="btn btn-primary btn-sm" data-action="view-pemilik-perumahan" data-id="${p.id}">Cek Pemilik</button>
+          <button class="btn btn-ghost btn-sm" data-action="edit-perumahan" data-id="${p.id}">Ubah</button>
+          <button class="btn btn-danger btn-sm" data-action="delete-perumahan" data-id="${p.id}">Hapus</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    console.error("Error render perumahan:", err);
+    const tbody = $('#perumahanTbody');
+    if(tbody) tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Terjadi kesalahan sistem: ${err.message}</div></td></tr>`;
   }
-  tbody.innerHTML = list.map(p => {
-    const count = state.users.filter(u => u.role === 'user' && u.perumahanId === p.id).length;
-    return `<tr>
-      <td><span class="mono">${p.id}</span></td>
-      <td><span class="td-title">${esc(p.nama)}</span></td>
-      <td><span class="td-sub" style="font-size:13px;color:#475569">${esc(p.lokasi)}</span></td>
-      <td><strong>${p.totalUnit}</strong> unit</td>
-      <td><strong>${count}</strong> orang</td>
-      <td class="row-actions">
-        <button class="btn btn-primary btn-sm" data-action="view-pemilik-perumahan" data-id="${p.id}">Cek Pemilik</button>
-        <button class="btn btn-ghost btn-sm" data-action="edit-perumahan" data-id="${p.id}">Ubah</button>
-        <button class="btn btn-danger btn-sm" data-action="delete-perumahan" data-id="${p.id}">Hapus</button>
-      </td>
-    </tr>`;
-  }).join('');
 }
 
 function openPerumahanModal(id) {
@@ -501,6 +522,7 @@ function openPerumahanModal(id) {
 
 function openPemilikPerumahanModal(perumahanId) {
   const p = state.perumahan.find(x => x.id === perumahanId);
+  if(!p) return;
   const users = state.users.filter(u => u.role === 'user' && u.perumahanId === perumahanId);
   
   const listHtml = users.length ? users.map(u => `
@@ -558,33 +580,45 @@ function renderPemilik() {
       </div>
     </div>
   `;
-  $('#searchPemilik').addEventListener('input', applyFilterPemilik);
+  const searchEl = $('#searchPemilik');
+  if (searchEl) searchEl.addEventListener('input', applyFilterPemilik);
   applyFilterPemilik();
 }
 
 function applyFilterPemilik() {
-  const q = ($('#searchPemilik')?.value || '').toLowerCase().trim();
-  let list = state.users.filter(u => u.role === 'user');
-  if (q) list = list.filter(u => u.nama.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || (u.blok || '').toLowerCase().includes(q));
-  
-  const tbody = $('#pemilikTbody');
-  if (!tbody) return;
-  
-  tbody.innerHTML = list.map(u => {
-    const warranty = getWarrantyStatus(u.tanggalSerahTerima);
-    return `<tr>
-      <td><span class="td-title">${esc(u.nama)}</span></td>
-      <td><span class="mono">${esc(u.username)}</span></td>
-      <td><span class="td-sub" style="font-size:13px;color:#475569">${esc(getPerumahanName(u.perumahanId))}</span></td>
-      <td><strong>${esc(u.blok || '—')}</strong></td>
-      <td>${warranty.expired ? '<span class="status ditolak">Habis</span>' : `<span class="status selesai">${warranty.daysLeft} Hari</span>`}</td>
-      <td class="row-actions">
-        <button class="btn btn-ghost btn-sm" data-action="view-documents" data-id="${u.id}">Lihat Dokumen</button>
-        <button class="btn btn-ghost btn-sm" data-action="edit-pemilik" data-id="${u.id}">Ubah</button>
-        <button class="btn btn-danger btn-sm" data-action="delete-pemilik" data-id="${u.id}">Hapus</button>
-      </td>
-    </tr>`;
-  }).join('');
+  try {
+    const q = ($('#searchPemilik')?.value || '').toLowerCase().trim();
+    let list = (state.users || []).filter(u => u.role === 'user');
+    if (q) list = list.filter(u => String(u.nama || '').toLowerCase().includes(q) || String(u.username || '').toLowerCase().includes(q) || String(u.blok || '').toLowerCase().includes(q));
+    
+    const tbody = $('#pemilikTbody');
+    if (!tbody) return;
+    
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty" style="padding:44px 20px"><div class="e-icon">👥</div><h4>Tidak ada data pembeli</h4></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list.map(u => {
+      const warranty = getWarrantyStatus(u.tanggalSerahTerima);
+      return `<tr>
+        <td><span class="td-title">${esc(u.nama)}</span></td>
+        <td><span class="mono">${esc(u.username)}</span></td>
+        <td><span class="td-sub" style="font-size:13px;color:#475569">${esc(getPerumahanName(u.perumahanId))}</span></td>
+        <td><strong>${esc(u.blok || '—')}</strong></td>
+        <td>${warranty.expired ? '<span class="status ditolak">Habis</span>' : `<span class="status selesai">${warranty.daysLeft} Hari</span>`}</td>
+        <td class="row-actions">
+          <button class="btn btn-ghost btn-sm" data-action="view-documents" data-id="${u.id}">Lihat Dokumen</button>
+          <button class="btn btn-ghost btn-sm" data-action="edit-pemilik" data-id="${u.id}">Ubah</button>
+          <button class="btn btn-danger btn-sm" data-action="delete-pemilik" data-id="${u.id}">Hapus</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    console.error("Error render pemilik:", err);
+    const tbody = $('#pemilikTbody');
+    if(tbody) tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Terjadi kesalahan sistem: ${err.message}</div></td></tr>`;
+  }
 }
 
 function openPemilikModal(id) {
@@ -621,7 +655,7 @@ function openPemilikModal(id) {
               <div class="field"><label>Perumahan *</label>
                 <select class="input" id="uPerumahan" required>
                   <option value="">— Pilih —</option>
-                  ${state.perumahan.map(p => `<option value="${p.id}" ${u?.perumahanId === p.id ? 'selected' : ''}>${esc(p.nama)}</option>`).join('')}
+                  ${(state.perumahan || []).map(p => `<option value="${p.id}" ${u?.perumahanId === p.id ? 'selected' : ''}>${esc(p.nama)}</option>`).join('')}
                 </select>
               </div>
               <div class="field"><label>Blok / No. Rumah *</label><input class="input" id="uBlok" required value="${esc(u?.blok || '')}"></div>
@@ -654,7 +688,7 @@ function openPemilikModal(id) {
     const tglSerah = $('#uTglSerah').value;
 
     if (!nama || !username || !password || !phone || !perumahanId || !blok || !tglSerah) return toast('Lengkapi field wajib', 'error');
-    if (state.users.some(x => x.username === username && x.id !== u?.id)) return toast('Username sudah dipakai', 'error');
+    if ((state.users || []).some(x => x.username === username && x.id !== u?.id)) return toast('Username sudah dipakai', 'error');
 
     const dokumenBaru = {};
     for (const k of DOC_KEYS) {
@@ -795,12 +829,15 @@ function renderNewRequest() {
   `;
 
   const fileInput = $('#photoInput'), dz = $('#dropzone');
-  dz.addEventListener('click', () => fileInput.click());
-  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
-  dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
-  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); handleFiles(e.dataTransfer.files); });
-  fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value = ''; });
-  $('#requestForm').addEventListener('submit', submitRequest);
+  if(dz) {
+    dz.addEventListener('click', () => fileInput.click());
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+    dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); handleFiles(e.dataTransfer.files); });
+    fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value = ''; });
+  }
+  const form = $('#requestForm');
+  if(form) form.addEventListener('submit', submitRequest);
 }
 
 async function handleFiles(files) {
@@ -890,6 +927,7 @@ function renderUserRequests() {
 
 function renderUserList(list, filter) {
   const box = $('#userList');
+  if(!box) return;
   const filtered = filter === 'all' ? list : list.filter(r => r.status === filter);
   if (!filtered.length) {
     box.innerHTML = `<div class="card">${emptyState('🗂️', 'Tidak ada pengajuan', 'Belum ada data.', 'Ajukan Retensi', 'new')}</div>`;
@@ -939,37 +977,45 @@ function renderAdminRequests() {
       </div>
     </div>
   `;
-  $('#searchReq').addEventListener('input', applyAdminFilters);
-  $('#filterReqStatus').addEventListener('change', applyAdminFilters);
+  const searchEl = $('#searchReq');
+  const filterEl = $('#filterReqStatus');
+  if (searchEl) searchEl.addEventListener('input', applyAdminFilters);
+  if (filterEl) filterEl.addEventListener('change', applyAdminFilters);
   applyAdminFilters();
 }
 
 function applyAdminFilters() {
-  const q = ($('#searchReq')?.value || '').toLowerCase().trim();
-  const st = $('#filterReqStatus')?.value || 'all';
-  let list = getAllRequests();
-  if (st !== 'all') list = list.filter(r => r.status === st);
-  if (q) list = list.filter(r => r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || r.ownerName.toLowerCase().includes(q));
-  
-  const body = $('#reqTableBody');
-  if (!body) return;
-  
-  body.innerHTML = list.length ? list.map(r => `
-    <tr>
-      <td><span class="mono">#${r.id}</span></td>
-      <td><span class="td-title" style="max-width:140px">${esc(r.ownerName)}</span><span class="td-sub">${esc(r.perumahanNama)}</span></td>
-      <td><span class="td-title">${esc(r.title)}</span></td>
-      <td>${statusBadge(r.status)}</td>
-      <td><span class="td-sub">${esc(r.assignedTo || '—')}</span></td>
-      <td><span class="td-sub">${r.estimatedCost ? rupiah(r.estimatedCost) : '—'}</span></td>
-      <td class="row-actions"><button class="btn btn-ghost btn-sm" data-action="open-detail" data-id="${r.id}">Kelola</button></td>
-    </tr>`).join('') : `<tr><td colspan="7"><div class="empty">Tidak ada data.</div></td></tr>`;
-  
-  if ($('#resultCount')) $('#resultCount').textContent = `${list.length} pengajuan`;
+  try {
+    const q = ($('#searchReq')?.value || '').toLowerCase().trim();
+    const st = $('#filterReqStatus')?.value || 'all';
+    let list = getAllRequests();
+    if (st !== 'all') list = list.filter(r => r.status === st);
+    if (q) list = list.filter(r => String(r.title||'').toLowerCase().includes(q) || String(r.id||'').toLowerCase().includes(q) || String(r.ownerName||'').toLowerCase().includes(q));
+    
+    const body = $('#reqTableBody');
+    if (!body) return;
+    
+    body.innerHTML = list.length ? list.map(r => `
+      <tr>
+        <td><span class="mono">#${r.id}</span></td>
+        <td><span class="td-title" style="max-width:140px">${esc(r.ownerName)}</span><span class="td-sub">${esc(r.perumahanNama)}</span></td>
+        <td><span class="td-title">${esc(r.title)}</span></td>
+        <td>${statusBadge(r.status)}</td>
+        <td><span class="td-sub">${esc(r.assignedTo || '—')}</span></td>
+        <td><span class="td-sub">${r.estimatedCost ? rupiah(r.estimatedCost) : '—'}</span></td>
+        <td class="row-actions"><button class="btn btn-ghost btn-sm" data-action="open-detail" data-id="${r.id}">Kelola</button></td>
+      </tr>`).join('') : `<tr><td colspan="7"><div class="empty">Tidak ada data.</div></td></tr>`;
+    
+    if ($('#resultCount')) $('#resultCount').textContent = `${list.length} pengajuan`;
+  } catch (err) {
+    console.error("Error render requests:", err);
+    const body = $('#reqTableBody');
+    if(body) body.innerHTML = `<tr><td colspan="7"><div class="empty">Error: ${err.message}</div></td></tr>`;
+  }
 }
 
 /* =========================================================
-   DETAIL MODAL (ADMIN & USER)
+   DETAIL MODAL
    ========================================================= */
 function openDetail(id) {
   const r = state.requests.find(x => x.id === id);
@@ -978,7 +1024,7 @@ function openDetail(id) {
   const pemilikData = state.users.find(u => u.id === r.pemilikId);
   const warranty = getWarrantyStatus(pemilikData?.tanggalSerahTerima);
 
-  const timelineHtml = r.timeline.map(t => `
+  const timelineHtml = (r.timeline || []).map(t => `
     <div class="tl-item">
       <span class="tl-dot" style="border-color:${STATUS[t.status]?.color || '#6366f1'}"></span>
       <div class="tl-head"><strong>${esc(STATUS[t.status]?.label || t.status)}</strong><span class="tl-time">${fmtDateTime(t.at)}</span></div>
@@ -1085,7 +1131,10 @@ function openDetail(id) {
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
 }
 
-function closeModal() { $('#modalRoot').innerHTML = ''; document.body.style.overflow = ''; }
+function closeModal() { 
+  const root = $('#modalRoot'); if(root) root.innerHTML = ''; 
+  document.body.style.overflow = ''; 
+}
 
 async function saveRequestChanges(id) {
   const r = state.requests.find(x => x.id === id);
@@ -1175,7 +1224,7 @@ function addUserNote(id) {
 }
 
 /* =========================================================
-   USER — PROGRAM RETENSI
+   USER — PROGRAM RETENSI & PANDUAN
    ========================================================= */
 function renderProgram() {
   $('#content').innerHTML = `
@@ -1226,20 +1275,17 @@ function renderProgram() {
   `;
 }
 
-/* =========================================================
-   PANDUAN
-   ========================================================= */
 function renderHelp() {
   const isAdmin = state.session.role === 'admin';
   const steps = isAdmin ? [
     ['Kelola Perumahan', 'Tambahkan perumahan yang dikelola.'],
-    ['Input Data Pembeli', 'Masukkan data diri, tanggal serah terima, dan unggah dokumen wajib (KTP, Buku Nikah, SHM, PBB).'],
-    ['Verifikasi & Cek Biaya', 'Saat pengajuan masuk, cek apakah masa 100 hari sudah habis. Jika ya, isi biaya tambahan.'],
-    ['Update Progres', 'Perbarui status, unggah foto dokumentasi pengerjaan di setiap tahap.'],
+    ['Input Data Pembeli', 'Masukkan data diri, tanggal serah terima, dan unggah dokumen wajib.'],
+    ['Verifikasi & Cek Biaya', 'Cek masa 100 hari. Jika habis, isi biaya tambahan.'],
+    ['Update Progres', 'Perbarui status, unggah foto dokumentasi pengerjaan.'],
   ] : [
     ['Cek Masa Garansi', 'Lihat widget countdown di Dashboard Anda.'],
     ['Ajukan Retensi', 'Isi form jika ada kerusakan.'],
-    ['Persetujuan', 'Jika masa garansi habis dan ada biaya, Anda akan diminta klik "Ya" atau "Tidak" pada detail pengajuan.'],
+    ['Persetujuan', 'Jika masa garansi habis dan ada biaya, klik "Ya" atau "Tidak" pada detail pengajuan.'],
     ['Pantau Progres', 'Lihat update dan foto dokumentasi dari admin.'],
   ];
 
@@ -1262,7 +1308,7 @@ function renderHelp() {
               <div style="font-size:13.5px;font-weight:600">${STATUS[s].label}</div>
               <div class="muted" style="font-size:12.5px">${
                 s === 'diajukan' ? 'Pengajuan baru dikirim.' :
-                s === 'verifikasi' ? 'Admin memeriksa kelayakan & biaya (pemilik diminta persetujuan).' :
+                s === 'verifikasi' ? 'Admin memeriksa kelayakan & biaya.' :
                 s === 'survei' ? 'Pengecekan lokasi fisik.' :
                 s === 'pengerjaan' ? 'Perbaikan sedang dilakukan.' :
                 s === 'pemeriksaan' ? 'Pengecekan akhir.' :
@@ -1319,41 +1365,52 @@ document.addEventListener('click', (e) => {
       renderUserList(getMyRequests(), el.dataset.status); break;
     }
     
-    // Handler Lightbox baru yang lebih aman (tanpa onclick inline)
     case 'zoom-src': {
-      $('#lightboxImg').src = el.dataset.src;
-      $('#lightbox').classList.remove('hidden');
+      const lbImg = $('#lightboxImg');
+      const lb = $('#lightbox');
+      if(lbImg && lb) {
+        lbImg.src = el.dataset.src;
+        lb.classList.remove('hidden');
+      }
       break;
     }
   }
 });
 
-function closeLightbox() { $('#lightbox').classList.add('hidden'); $('#lightboxImg').src = ''; }
-$('#lightbox').addEventListener('click', closeLightbox);
+function closeLightbox() { 
+  const lb = $('#lightbox'); if(lb) lb.classList.add('hidden'); 
+  const img = $('#lightboxImg'); if(img) img.src = ''; 
+}
+$('#lightbox')?.addEventListener('click', closeLightbox);
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (!$('#lightbox').classList.contains('hidden')) closeLightbox();
-    else if ($('#modalRoot').innerHTML) closeModal();
+    if (!$('#lightbox')?.classList.contains('hidden')) closeLightbox();
+    else if ($('#modalRoot')?.innerHTML) closeModal();
     else closeSidebar();
   }
 });
 
-$('#menuToggle').addEventListener('click', () => { $('#sidebar').classList.add('open'); $('#sidebarBackdrop').classList.add('show'); });
-$('#sidebarBackdrop').addEventListener('click', () => { $('#sidebar').classList.remove('open'); $('#sidebarBackdrop').classList.remove('show'); });
+$('#menuToggle')?.addEventListener('click', () => { $('#sidebar')?.classList.add('open'); $('#sidebarBackdrop')?.classList.add('show'); });
+$('#sidebarBackdrop')?.addEventListener('click', () => { $('#sidebar')?.classList.remove('open'); $('#sidebarBackdrop')?.classList.remove('show'); });
+
+function closeSidebar() { 
+  $('#sidebar')?.classList.remove('open'); 
+  $('#sidebarBackdrop')?.classList.remove('show'); 
+}
 
 /* ---------------- Login & Init ---------------- */
-$('#fillDemo').addEventListener('click', () => {
+$('#fillDemo')?.addEventListener('click', () => {
   $('#loginUsername').value = 'admin';
   $('#loginPassword').value = 'admin123';
   toast('Akun admin terisi', 'info');
 });
 
-$('#loginForm').addEventListener('submit', (e) => {
+$('#loginForm')?.addEventListener('submit', (e) => {
   e.preventDefault();
   const username = $('#loginUsername').value.trim().toLowerCase();
   const password = $('#loginPassword').value;
-  const user = state.users.find(u => u.username === username && u.password === password);
+  const user = (state.users || []).find(u => u.username === username && u.password === password);
   if (!user) return toast('Username atau password salah.', 'error');
 
   state.session = { ...user };
@@ -1364,16 +1421,26 @@ $('#loginForm').addEventListener('submit', (e) => {
 });
 
 function init() {
+  // Paksa reset jika ada data yang korup dari versi sebelumnya
   let perumahan = store.get(K_PERUMAHAN, null);
-  if (!Array.isArray(perumahan) || !perumahan.length) { perumahan = seedPerumahan(); store.set(K_PERUMAHAN, perumahan); }
+  if (!Array.isArray(perumahan) || perumahan.length === 0) { 
+    perumahan = seedPerumahan(); 
+    store.set(K_PERUMAHAN, perumahan); 
+  }
   state.perumahan = perumahan;
 
   let users = store.get(K_USERS, null);
-  if (!Array.isArray(users) || !users.length) { users = seedUsers(); store.set(K_USERS, users); }
+  if (!Array.isArray(users) || users.length === 0) { 
+    users = seedUsers(); 
+    store.set(K_USERS, users); 
+  }
   state.users = users;
 
   let reqs = store.get(K_REQ, null);
-  if (!Array.isArray(reqs) || !reqs.length) { reqs = seedRequests(); store.set(K_REQ, reqs); }
+  if (!Array.isArray(reqs) || reqs.length === 0) { 
+    reqs = seedRequests(); 
+    store.set(K_REQ, reqs); 
+  }
   state.requests = reqs;
 
   const session = store.get(K_SESSION, null);
