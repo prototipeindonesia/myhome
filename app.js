@@ -1,6 +1,6 @@
 /* =========================================================
    Dreamland — Property Management CRM (Retensi Edition)
-   FINAL VERSION: 8 Revisions + Anti-Blank System
+   FINAL VERSION: 8 Revisions + Anti-Blank + Notifications
    ========================================================= */
 
 /* ---------------- Status & Konstanta ---------------- */
@@ -14,11 +14,9 @@ const STATUS = {
   ditolak:     { label: 'Ditolak',     short: 'Ditolak',     color: '#ef4444', bg: '#fee2e2' },
 };
 
-// Poin 4: Perencanaan dihapus
 const STATUS_FLOW = ['diajukan', 'verifikasi', 'survei', 'pengerjaan', 'pemeriksaan', 'selesai'];
 const STATUS_ALL  = [...STATUS_FLOW, 'ditolak'];
 
-// Poin 1: Renovasi diganti Retensi
 const CATEGORIES = [
   'Retensi Struktur', 'Retensi Atap', 'Retensi Plafon',
   'Retensi Plumbing', 'Retensi Listrik', 'Retensi Pengecatan',
@@ -77,12 +75,11 @@ function timeAgo(iso) {
   return fmtDate(iso);
 }
 
-// Poin 3 & 4: Hitung Sisa Garansi Retensi 100 Hari
 function getWarrantyStatus(tglSerahTerima) {
   if (!tglSerahTerima) return { daysLeft: 0, expired: true, text: 'Tanggal serah terima belum diatur' };
   const handover = new Date(tglSerahTerima).getTime();
   const now = new Date().getTime();
-  const limit = handover + (100 * 24 * 60 * 60 * 1000); // 100 hari
+  const limit = handover + (100 * 24 * 60 * 60 * 1000);
   const diff = limit - now;
   
   if (diff <= 0) {
@@ -92,17 +89,19 @@ function getWarrantyStatus(tglSerahTerima) {
   return { daysLeft, expired: false, text: `Sisa masa retensi: ${daysLeft} hari lagi` };
 }
 
-/* ---------------- Storage & State (Versi v3) ---------------- */
+/* ---------------- Storage & State (v4) ---------------- */
 const store = {
   get(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } },
   set(k, v)   { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { toast('Penyimpanan penuh.', 'error'); return false; } },
   del(k)      { localStorage.removeItem(k); },
 };
 
-const K_USERS    = 'dl_users_v3';
-const K_PERUMAHAN= 'dl_perumahan_v3';
-const K_REQ      = 'dl_requests_v3';
-const K_SESSION  = 'dl_session_v3';
+// Upgrade ke v4 untuk memuat struktur notifikasi baru
+const K_USERS    = 'dl_users_v4';
+const K_PERUMAHAN= 'dl_perumahan_v4';
+const K_REQ      = 'dl_requests_v4';
+const K_SESSION  = 'dl_session_v4';
+const K_NOTIF    = 'dl_notifications_v4'; 
 
 const state = {
   session: null,
@@ -110,8 +109,11 @@ const state = {
   users: [],
   perumahan: [],
   requests: [],
+  notifications: [],
   draftPhotos: [],
 };
+
+let lastRequestCount = 0; // Untuk Polling Real-time Admin
 
 /* ---------------- Seed Data ---------------- */
 function seedPerumahan() {
@@ -130,7 +132,7 @@ function seedUsers() {
     { id: 'U-02', username: 'budi', password: '123456', role: 'user',
       nama: 'Budi Santoso', phone: '0812-3456-7890', email: 'budi@email.com',
       perumahanId: 'P-01', blok: 'A-12', createdAt: new Date(now - 40*86400000).toISOString(), 
-      tanggalSerahTerima: new Date(now - 30*86400000).toISOString(), // 30 hari lalu, sisa 70 hari
+      tanggalSerahTerima: new Date(now - 30*86400000).toISOString(),
       dokumen: { 
         ktp: 'https://placehold.co/400x250?text=KTP+Budi', 
         npwp: 'https://placehold.co/400x250?text=NPWP+Budi', 
@@ -142,7 +144,7 @@ function seedUsers() {
     { id: 'U-03', username: 'siti', password: '123456', role: 'user',
       nama: 'Siti Rahmawati', phone: '0813-9876-5432', email: 'siti@email.com',
       perumahanId: 'P-02', blok: 'B-07', createdAt: new Date(now - 150*86400000).toISOString(), 
-      tanggalSerahTerima: new Date(now - 120*86400000).toISOString(), // 120 hari lalu, expired
+      tanggalSerahTerima: new Date(now - 120*86400000).toISOString(),
       dokumen: { 
         ktp: 'https://placehold.co/400x250?text=KTP+Siti', 
         npwp: 'https://placehold.co/400x250?text=NPWP+Siti', 
@@ -181,7 +183,7 @@ function seedRequests() {
       title: 'Retensi Atap Bocor',
       category: 'Retensi Atap', priority: 'Tinggi',
       description: 'Atap bocor saat hujan deras. Mohon diperiksa.',
-      photos: [], status: 'verifikasi', assignedTo: '', estimatedCost: 1500000, // Kena biaya karena expired
+      photos: [], status: 'verifikasi', assignedTo: '', estimatedCost: 1500000,
       createdAt: d(5), updatedAt: d(1),
       timeline: [
         { status: 'diajukan',   note: 'Pengajuan dibuat.', by: 'Siti Rahmawati', role: 'user', at: d(5), photos: [] },
@@ -189,6 +191,70 @@ function seedRequests() {
       ],
     },
   ];
+}
+
+/* ---------------- [NEW] Notifikasi System ---------------- */
+function addNotification(userId, message, requestId) {
+  state.notifications.push({
+    id: uid('NTF'),
+    userId,
+    message,
+    requestId,
+    isRead: false,
+    createdAt: new Date().toISOString()
+  });
+  persistAll();
+  updateNotifBadge();
+}
+
+function updateNotifBadge() {
+  if (!state.session) return;
+  const userId = state.session.role === 'admin' ? 'admin' : state.session.id;
+  const unread = state.notifications.filter(n => n.userId === userId && !n.isRead).length;
+  const badge = $('#notifBadge');
+  if (badge) {
+    if (unread > 0) {
+      badge.textContent = unread > 9 ? '9+' : unread;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+  renderNotifDropdown();
+}
+
+function renderNotifDropdown() {
+  const list = $('#notifList');
+  if (!list || !state.session) return;
+
+  const userId = state.session.role === 'admin' ? 'admin' : state.session.id;
+  const myNotifs = state.notifications
+    .filter(n => n.userId === userId)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  if (myNotifs.length === 0) {
+    list.innerHTML = `<div class="empty" style="padding: 30px 20px;"><p class="muted" style="font-size: 13px;">Belum ada notifikasi.</p></div>`;
+    return;
+  }
+
+  list.innerHTML = myNotifs.map(n => `
+    <div class="notif-item ${n.isRead ? '' : 'unread'}" data-action="open-notif" data-id="${n.id}" data-req="${n.requestId}">
+      <div class="notif-icon">🔔</div>
+      <div class="notif-content">
+        <p>${esc(n.message)}</p>
+        <span class="notif-time">${timeAgo(n.createdAt)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function markNotifAsRead(id) {
+  const n = state.notifications.find(x => x.id === id);
+  if (n) {
+    n.isRead = true;
+    persistAll();
+    updateNotifBadge();
+  }
 }
 
 /* ---------------- Toast & Persistence ---------------- */
@@ -212,6 +278,7 @@ function persistAll() {
   store.set(K_USERS, state.users);
   store.set(K_PERUMAHAN, state.perumahan);
   store.set(K_REQ, state.requests);
+  store.set(K_NOTIF, state.notifications);
 }
 
 /* ---------------- Auth & Navigation ---------------- */
@@ -224,7 +291,9 @@ function enterApp() {
   const l = $('#loginScreen'); if(l) l.classList.add('hidden');
   const a = $('#app'); if(a) a.classList.remove('hidden');
   state.page = 'dashboard';
-  renderNav(); renderShellUser(); renderPage();
+  renderNav(); renderShellUser(); updateNotifBadge(); renderPage();
+  
+  lastRequestCount = state.requests.length;
 }
 
 function renderShellUser() {
@@ -248,6 +317,7 @@ function logout() {
   store.del(K_SESSION);
   state.session = null;
   closeModal();
+  $('#notifDropdown')?.classList.add('hidden');
   showLogin();
   toast('Anda telah keluar', 'info');
 }
@@ -375,7 +445,6 @@ function renderUserDashboard() {
   $('#pageSubtitle').textContent = `Halo ${firstName}, pantau pengajuan retensi Anda di sini.`;
 
   $('#content').innerHTML = `
-    <!-- Widget Countdown Garansi -->
     <div class="countdown-widget ${warranty.expired ? 'expired' : ''}">
       <div>
         <h4>Status Garansi Retensi (100 Hari)</h4>
@@ -428,7 +497,7 @@ function miniRow(r) {
 }
 
 /* =========================================================
-   ADMIN — PERUMAHAN (Poin 8)
+   ADMIN — PERUMAHAN
    ========================================================= */
 function renderPerumahan() {
   $('#content').innerHTML = `
@@ -525,7 +594,6 @@ function openPerumahanModal(id) {
   });
 }
 
-// Poin 8: Modal Lihat Pemilik per Perumahan
 function openPemilikPerumahanModal(perumahanId) {
   const p = state.perumahan.find(x => x.id === perumahanId);
   if(!p) return;
@@ -558,7 +626,7 @@ function openPemilikPerumahanModal(perumahanId) {
 }
 
 /* =========================================================
-   ADMIN — DATA PEMBELI & DOKUMEN (Poin 2 & 7)
+   ADMIN — DATA PEMBELI & DOKUMEN
    ========================================================= */
 const DOC_LABELS = {
   ktp: 'KTP & NPWP Suami Istri *', bukuNikah: 'Buku Nikah *', skKerja: 'SK Kerja',
@@ -729,7 +797,6 @@ function openPemilikModal(id) {
   });
 }
 
-// Poin 7: Modal Lihat Dokumen
 function openDocModal(userId) {
   const u = state.users.find(x => x.id === userId);
   if (!u) return;
@@ -905,7 +972,14 @@ function submitRequest(e) {
     createdAt: now, updatedAt: now,
     timeline: [{ status: 'diajukan', note: 'Pengajuan retensi dibuat.', by: state.session.nama, role: 'user', at: now, photos: [] }],
   };
-  state.requests.push(req); persistAll(); state.draftPhotos = [];
+  
+  state.requests.push(req); 
+  
+  // Notifikasi ke Admin
+  addNotification('admin', `Pengajuan retensi baru dari ${state.session.nama} (${title})`, req.id);
+
+  persistAll(); 
+  state.draftPhotos = [];
   toast('Pengajuan berhasil dikirim!', 'success');
   goTo('requests');
   setTimeout(() => openDetail(req.id), 320);
@@ -1022,7 +1096,7 @@ function applyAdminFilters() {
 }
 
 /* =========================================================
-   DETAIL MODAL (ADMIN & USER) - Poin 4, 6, 7
+   DETAIL MODAL
    ========================================================= */
 function openDetail(id) {
   const r = state.requests.find(x => x.id === id);
@@ -1040,7 +1114,6 @@ function openDetail(id) {
       ${t.photos && t.photos.length ? `<div class="tl-photos">${t.photos.map(p => `<img src="${p}" data-action="zoom-src" data-src="${p}">`).join('')}</div>` : ''}
     </div>`).join('');
 
-  // Poin 5: Panel Admin (Upload Foto Progres)
   const adminPanel = isAdmin ? `
     <div class="side-box" style="margin-bottom:16px">
       <h4>⚙️ Kelola Pengajuan</h4>
@@ -1077,7 +1150,6 @@ function openDetail(id) {
     </div>
   `;
 
-  // Poin 6: Panel Verifikasi Pemilik (Ya/Tidak)
   const userVerifyPanel = (!isAdmin && r.status === 'verifikasi') ? `
     <div class="side-box" style="margin-bottom:16px; border:2px solid var(--warning); background:#fffbeb;">
       <h4>⚠️ Persetujuan Retensi</h4>
@@ -1145,7 +1217,6 @@ function closeModal() {
   document.body.style.overflow = ''; 
 }
 
-// Simpan Perubahan dari Admin (Poin 6)
 async function saveRequestChanges(id) {
   const r = state.requests.find(x => x.id === id);
   if (!r) return;
@@ -1165,8 +1236,9 @@ async function saveRequestChanges(id) {
 
   const notes = [];
   let changed = false;
+  const statusChanged = newStatus !== r.status;
 
-  if (newStatus !== r.status) {
+  if (statusChanged) {
     r.status = newStatus;
     notes.push(`Status diubah ke "${STATUS[newStatus].label}".`);
     changed = true;
@@ -1194,6 +1266,11 @@ async function saveRequestChanges(id) {
     at: r.updatedAt,
     photos: newPhoto ? [newPhoto] : [] 
   });
+
+  // Notifikasi ke User jika status berubah
+  if (statusChanged) {
+    addNotification(r.pemilikId, `Progres pengajuan "${r.title}" diperbarui menjadi: ${STATUS[newStatus].label}`, r.id);
+  }
   
   persistAll();
   closeModal();
@@ -1201,7 +1278,6 @@ async function saveRequestChanges(id) {
   toast('Perubahan disimpan', 'success');
 }
 
-// Konfirmasi Ya/Tidak oleh Pemilik (Poin 7)
 function userVerifyRequest(id, val) {
   const r = state.requests.find(x => x.id === id);
   if (!r) return;
@@ -1211,10 +1287,12 @@ function userVerifyRequest(id, val) {
     r.status = 'survei';
     r.timeline.push({ status: 'survei', note: 'Pemilik menyetujui kelanjutan retensi.', by: state.session.nama, role: 'user', at: now, photos: [] });
     toast('Persetujuan diterima. Lanjut ke survei.', 'success');
+    addNotification('admin', `${state.session.nama} MENYETUJUI retensi untuk "${r.title}"`, r.id);
   } else {
     r.status = 'ditolak';
     r.timeline.push({ status: 'ditolak', note: 'Pemilik menolak retensi (tidak setuju dengan ketentuan/biaya).', by: state.session.nama, role: 'user', at: now, photos: [] });
     toast('Pengajuan dibatalkan.', 'info');
+    addNotification('admin', `${state.session.nama} MENOLAK retensi untuk "${r.title}"`, r.id);
   }
   r.updatedAt = now;
   persistAll();
@@ -1229,6 +1307,9 @@ function addUserNote(id) {
   if (!note) return toast('Tulis catatan dulu', 'error');
   r.updatedAt = new Date().toISOString();
   r.timeline.push({ status: r.status, note, by: state.session.nama, role: 'user', at: r.updatedAt, photos: [] });
+  
+  addNotification('admin', `Catatan baru dari ${state.session.nama} pada pengajuan "${r.title}"`, r.id);
+
   persistAll();
   openDetail(id);
   toast('Catatan terkirim', 'success');
@@ -1336,14 +1417,11 @@ function renderHelp() {
 }
 
 /* =========================================================
-   SIDEBAR (mobile)
+   SIDEBAR (mobile) & LIGHTBOX
    ========================================================= */
 function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarBackdrop')?.classList.add('show'); }
 function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarBackdrop')?.classList.remove('show'); }
 
-/* =========================================================
-   LIGHTBOX
-   ========================================================= */
 function closeLightbox() { 
   const lb = $('#lightbox'); if(lb) lb.classList.add('hidden'); 
   const img = $('#lightboxImg'); if(img) img.src = ''; 
@@ -1403,6 +1481,13 @@ document.addEventListener('click', (e) => {
       }
       break;
     }
+
+    case 'open-notif': {
+      markNotifAsRead(el.dataset.id);
+      $('#notifDropdown').classList.add('hidden');
+      if (el.dataset.req) openDetail(el.dataset.req);
+      break;
+    }
   }
 });
 
@@ -1410,6 +1495,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!$('#lightbox')?.classList.contains('hidden')) closeLightbox();
     else if ($('#modalRoot')?.innerHTML) closeModal();
+    else if (!$('#notifDropdown')?.classList.contains('hidden')) $('#notifDropdown').classList.add('hidden');
     else closeSidebar();
   }
 });
@@ -1417,7 +1503,7 @@ document.addEventListener('keydown', (e) => {
 $('#menuToggle')?.addEventListener('click', openSidebar);
 $('#sidebarBackdrop')?.addEventListener('click', closeSidebar);
 
-/* ---------------- Login & Init ---------------- */
+/* ---------------- Login & Notif Toggle ---------------- */
 $('#fillDemo')?.addEventListener('click', () => {
   $('#loginUsername').value = 'admin';
   $('#loginPassword').value = 'admin123';
@@ -1438,27 +1524,53 @@ $('#loginForm')?.addEventListener('submit', (e) => {
   enterApp();
 });
 
+// Toggle Dropdown Notifikasi
+$('#notifBtn')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const dd = $('#notifDropdown');
+  if (dd) dd.classList.toggle('hidden');
+  renderNotifDropdown();
+});
+
+// Tutup dropdown jika klik di luar
+document.addEventListener('click', (e) => {
+  const dd = $('#notifDropdown');
+  const btn = $('#notifBtn');
+  if (dd && !dd.classList.contains('hidden') && !dd.contains(e.target) && !btn.contains(e.target)) {
+    dd.classList.add('hidden');
+  }
+});
+
+// Tandai semua dibaca
+$('#markAllRead')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!state.session) return;
+  const userId = state.session.role === 'admin' ? 'admin' : state.session.id;
+  state.notifications.forEach(n => { if (n.userId === userId) n.isRead = true; });
+  persistAll();
+  updateNotifBadge();
+  renderNotifDropdown();
+});
+
+/* =========================================================
+   INIT & REAL-TIME POLLING (SIMULASI)
+   ========================================================= */
 function init() {
   let perumahan = store.get(K_PERUMAHAN, null);
-  if (!Array.isArray(perumahan) || perumahan.length === 0) { 
-    perumahan = seedPerumahan(); 
-    store.set(K_PERUMAHAN, perumahan); 
-  }
+  if (!Array.isArray(perumahan) || perumahan.length === 0) { perumahan = seedPerumahan(); store.set(K_PERUMAHAN, perumahan); }
   state.perumahan = perumahan;
 
   let users = store.get(K_USERS, null);
-  if (!Array.isArray(users) || users.length === 0) { 
-    users = seedUsers(); 
-    store.set(K_USERS, users); 
-  }
+  if (!Array.isArray(users) || users.length === 0) { users = seedUsers(); store.set(K_USERS, users); }
   state.users = users;
 
   let reqs = store.get(K_REQ, null);
-  if (!Array.isArray(reqs) || reqs.length === 0) { 
-    reqs = seedRequests(); 
-    store.set(K_REQ, reqs); 
-  }
+  if (!Array.isArray(reqs) || reqs.length === 0) { reqs = seedRequests(); store.set(K_REQ, reqs); }
   state.requests = reqs;
+
+  let notifs = store.get(K_NOTIF, null);
+  if (!Array.isArray(notifs)) { notifs = []; }
+  state.notifications = notifs;
 
   const session = store.get(K_SESSION, null);
   if (session && session.role) {
@@ -1468,5 +1580,25 @@ function init() {
     showLogin();
   }
 }
+
+// SIMULASI REAL-TIME POLLING UNTUK ADMIN
+setInterval(() => {
+  if (state.session && state.session.role === 'admin') {
+    const localReqs = store.get(K_REQ, []);
+    if (localReqs.length > state.requests.length) {
+      const newReq = localReqs[localReqs.length - 1];
+      state.requests = localReqs;
+      
+      // Sinkronisasi notifikasi jika ada dari tab lain
+      const localNotifs = store.get(K_NOTIF, []);
+      state.notifications = localNotifs;
+      
+      updateNotifBadge();
+      toast(`🔔 Pengajuan baru dari ${newReq.ownerName}!`, 'info');
+      
+      if (state.page === 'requests' || state.page === 'dashboard') renderPage();
+    }
+  }
+}, 5000);
 
 document.addEventListener('DOMContentLoaded', init);
