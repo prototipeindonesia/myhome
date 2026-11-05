@@ -1,11 +1,11 @@
 /* =========================================================
    Dreamland — Property Management CRM
-   FIREBASE EDITION (Super Admin, Admin, Legal, User)
+   FIREBASE EDITION (Final Stable Version)
    ========================================================= */
 
-// Pastikan Firebase sudah ter-load dari index.html
 if (!window.FirebaseApp) {
-  console.error("Firebase belum siap! Pastikan index.html sudah memuat Firebase SDK.");
+  console.error("Firebase belum siap!");
+  alert("Gagal memuat Firebase. Cek Console.");
   throw new Error("FirebaseApp is not defined");
 }
 
@@ -17,15 +17,15 @@ const {
   ref, uploadBytes, getDownloadURL 
 } = fb;
 
-/* ---------------- Status & Konstanta ---------------- */
+/* ---------------- Konstanta ---------------- */
 const STATUS = {
-  diajukan:    { label: 'Diajukan',    short: 'Diajukan',    color: '#94a3b8', bg: '#f1f5f9' },
-  verifikasi:  { label: 'Verifikasi',  short: 'Verifikasi',  color: '#f59e0b', bg: '#fef3c7' },
-  survei:      { label: 'Survei',      short: 'Survei',      color: '#3b82f6', bg: '#dbeafe' },
-  pengerjaan:  { label: 'Pengerjaan',  short: 'Pengerjaan',  color: '#6366f1', bg: '#e0e7ff' },
-  pemeriksaan: { label: 'Pemeriksaan', short: 'Pemeriksaan', color: '#06b6d4', bg: '#cffafe' },
-  selesai:     { label: 'Selesai',     short: 'Selesai',     color: '#10b981', bg: '#d1fae5' },
-  ditolak:     { label: 'Ditolak',     short: 'Ditolak',     color: '#ef4444', bg: '#fee2e2' },
+  diajukan:    { label: 'Diajukan',    short: 'Diajukan',    color: '#94a3b8' },
+  verifikasi:  { label: 'Verifikasi',  short: 'Verifikasi',  color: '#f59e0b' },
+  survei:      { label: 'Survei',      short: 'Survei',      color: '#3b82f6' },
+  pengerjaan:  { label: 'Pengerjaan',  short: 'Pengerjaan',  color: '#6366f1' },
+  pemeriksaan: { label: 'Pemeriksaan', short: 'Pemeriksaan', color: '#06b6d4' },
+  selesai:     { label: 'Selesai',     short: 'Selesai',     color: '#10b981' },
+  ditolak:     { label: 'Ditolak',     short: 'Ditolak',     color: '#ef4444' },
 };
 const STATUS_FLOW = ['diajukan', 'verifikasi', 'survei', 'pengerjaan', 'pemeriksaan', 'selesai'];
 const STATUS_ALL  = [...STATUS_FLOW, 'ditolak'];
@@ -35,7 +35,6 @@ const CATEGORIES = [
   'Retensi Plumbing', 'Retensi Listrik', 'Retensi Pengecatan',
   'Retensi Keramik', 'Retensi Taman', 'Lainnya'
 ];
-const PRIORITIES = ['Rendah', 'Sedang', 'Tinggi'];
 
 const ROLE = {
   SUPERADMIN: 'superadmin',
@@ -54,15 +53,9 @@ const REQUIRED_DOCS = ['ktp', 'bukuNikah', 'shm', 'pbb'];
 
 /* ---------------- State ---------------- */
 const state = {
-  session: null,
-  page: 'dashboard',
-  users: [],
-  perumahan: [],
-  requests: [],
-  notifications: [],
-  isSuperAdmin: false,
-  isAdmin: false,
-  isLegal: false,
+  session: null, page: 'dashboard',
+  users: [], perumahan: [], requests: [], notifications: [],
+  isSuperAdmin: false, isAdmin: false, isLegal: false,
 };
 
 let unsubRequests = null;
@@ -76,43 +69,44 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'
 const initials = (name) => String(name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 const statusBadge = (s) => `<span class="status ${s}">${STATUS[s]?.label || s}</span>`;
 
-// Fungsi Format Tanggal (Aman dari Firestore Timestamp)
 function formatDate(val) {
   if (!val) return '-';
-  const date = val.toDate ? val.toDate() : new Date(val);
-  return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  try {
+    const date = val.toDate ? val.toDate() : new Date(val);
+    return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch { return '-'; }
 }
 
 function formatDateTime(val) {
   if (!val) return '-';
-  const date = val.toDate ? val.toDate() : new Date(val);
-  return date.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  try {
+    const date = val.toDate ? val.toDate() : new Date(val);
+    return date.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return '-'; }
 }
 
 function timeAgo(val) {
   if (!val) return '-';
-  const date = val.toDate ? val.toDate() : new Date(val);
-  const diff = Date.now() - date.getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'baru saja';
-  if (m < 60) return `${m} menit lalu`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} jam lalu`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d} hari lalu`;
-  return formatDate(val);
+  try {
+    const date = val.toDate ? val.toDate() : new Date(val);
+    const diff = Date.now() - date.getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'baru saja';
+    if (m < 60) return `${m} menit lalu`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} jam lalu`;
+    const d = Math.floor(h / 24);
+    return `${d} hari lalu`;
+  } catch { return '-'; }
 }
 
 function getWarrantyStatus(tglSerahTerima) {
   if (!tglSerahTerima) return { daysLeft: 0, expired: true, text: 'Tanggal serah terima belum diatur' };
   const handover = new Date(tglSerahTerima).getTime();
   const now = new Date().getTime();
-  const limit = handover + (100 * 24 * 60 * 60 * 1000);
-  const diff = limit - now;
+  const diff = (handover + (100 * 24 * 60 * 60 * 1000)) - now;
   
-  if (diff <= 0) {
-    return { daysLeft: 0, expired: true, text: 'Masa retensi telah habis' };
-  }
+  if (diff <= 0) return { daysLeft: 0, expired: true, text: 'Masa retensi telah habis' };
   const daysLeft = Math.ceil(diff / (24 * 60 * 60 * 1000));
   return { daysLeft, expired: false, text: `Sisa masa retensi: ${daysLeft} hari lagi` };
 }
@@ -134,7 +128,7 @@ function toast(msg, type = 'info') {
   }, 3200);
 }
 
-/* ---------------- AUTH & INIT ---------------- */
+/* ---------------- AUTH ---------------- */
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     try {
@@ -165,9 +159,9 @@ onAuthStateChanged(auth, async (user) => {
     }
   } else {
     state.session = null;
-    if(unsubRequests) unsubRequests();
-    if(unsubUsers) unsubUsers();
-    if(unsubNotifs) unsubNotifs();
+    if(unsubRequests) { unsubRequests(); unsubRequests = null; }
+    if(unsubUsers) { unsubUsers(); unsubUsers = null; }
+    if(unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
     $('#loginScreen').classList.remove('hidden');
     $('#app').classList.add('hidden');
   }
@@ -215,13 +209,11 @@ $('#btnLogout')?.addEventListener('click', () => {
 
 /* ---------------- REALTIME LISTENERS ---------------- */
 function setupRealtimeListeners() {
-  // 1. Users Listener
   unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
     state.users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     if (['pemilik', 'users', 'dashboard'].includes(state.page)) renderPage();
   });
 
-  // 2. Requests Listener
   let reqQuery = collection(db, "requests");
   if (!state.isAdmin && !state.isLegal) {
     reqQuery = query(collection(db, "requests"), where("pemilikId", "==", state.session.id));
@@ -231,11 +223,9 @@ function setupRealtimeListeners() {
     if (['dashboard', 'requests'].includes(state.page)) renderPage();
   });
 
-  // 3. Notifications Listener
   const notifTarget = (state.isAdmin || state.isLegal) ? 'admin' : state.session.id;
   unsubNotifs = onSnapshot(query(collection(db, "notifications"), where("userId", "==", notifTarget)), (snap) => {
     state.notifications = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    // Urutkan manual
     state.notifications.sort((a, b) => {
       const tA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
       const tB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
@@ -399,7 +389,7 @@ $('#markAllRead')?.addEventListener('click', async (e) => {
   }
 });
 
-/* ---------------- SHARED HELPERS ---------------- */
+/* ---------------- HELPERS ---------------- */
 const countBy = (list) => {
   const c = {};
   STATUS_ALL.forEach(s => c[s] = 0);
@@ -440,9 +430,7 @@ async function uploadFile(file, path) {
   return await getDownloadURL(storageRef);
 }
 
-/* =========================================================
-   DASHBOARD
-   ========================================================= */
+/* ---------------- DASHBOARD ---------------- */
 function renderAdminDashboard() {
   const all = getAllRequests();
   const c = countBy(all);
@@ -545,9 +533,7 @@ function miniRow(r) {
     </div>`;
 }
 
-/* =========================================================
-   PERUMAHAN
-   ========================================================= */
+/* ---------------- PERUMAHAN ---------------- */
 async function renderPerumahan() {
   $('#content').innerHTML = `<div style="text-align:center; padding:50px;">Memuat data perumahan...</div>`;
   try {
@@ -660,9 +646,7 @@ async function openPemilikPerumahanModal(perumahanId) {
   document.body.style.overflow = 'hidden';
 }
 
-/* =========================================================
-   PEMILIK & DOKUMEN
-   ========================================================= */
+/* ---------------- PEMILIK & DOKUMEN ---------------- */
 function renderPemilik() {
   $('#content').innerHTML = `
     <div class="toolbar">
@@ -787,7 +771,6 @@ function openPemilikModal(id) {
         await updateDoc(doc(db, "users", u.id), data);
       } else {
         toast('Untuk akun baru, buat di Firebase Auth terlebih dahulu.', 'info');
-        // Simpan profile saja. User harus dibuat manual di Auth, atau via Backend.
         await addDoc(collection(db, "users"), { ...data, createdAt: serverTimestamp() });
       }
       toast('Berhasil disimpan', 'success');
@@ -819,9 +802,7 @@ function openDocModal(userId) {
   document.body.style.overflow = 'hidden';
 }
 
-/* =========================================================
-   KELOLA AKUN (SUPER ADMIN)
-   ========================================================= */
+/* ---------------- KELOLA AKUN ---------------- */
 function renderKelolaAkun() {
   $('#content').innerHTML = `
     <div class="card"><div class="table-wrap"><table>
@@ -840,9 +821,7 @@ function renderKelolaAkun() {
   `;
 }
 
-/* =========================================================
-   PENGAJUAN
-   ========================================================= */
+/* ---------------- PENGAJUAN ---------------- */
 function renderNewRequest() {
   $('#content').innerHTML = `
     <div style="max-width:800px">
