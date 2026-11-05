@@ -155,7 +155,7 @@
   <!-- ==================== FIREBASE SDK & APP LOGIC ==================== -->
   <script type="module">
     // =========================================================
-    // 1. KONFIGURASI FIREBASE
+    // 1. KONFIGURASI FIREBASE (SILAKAN GANTI JIKA PERLU)
     // =========================================================
     const firebaseConfig = {
       apiKey: "AIzaSyBc3GNZ3PBRQbqPGZmV_01rU6RZEVSo36Q",
@@ -182,7 +182,9 @@
     const db = getFirestore(app);
     const storage = getStorage(app);
 
-    // Ekspos instance dan fungsi ke window
+    // =========================================================
+    // 4. EKSPOS KE WINDOW (Agar app.js bisa mengakses)
+    // =========================================================
     window.FirebaseApp = {
       auth, db, storage,
       fb: {
@@ -191,18 +193,11 @@
         ref, uploadBytes, getDownloadURL
       }
     };
-
-    // Muat app.js secara manual setelah window.FirebaseApp siap
-    const script = document.createElement('script');
-    script.type = 'module';
-    script.textContent = `
-      // Trik: import app.js setelah Firebase siap
-      import('./app.js').catch(err => {
-        console.error("Gagal memuat app.js:", err);
-        alert("Gagal memuat modul aplikasi. Cek Console untuk detail.");
-      });
-    `;
-    document.body.appendChild(script);
   </script>
+  
+  <!-- =========================================================
+       LOAD APP.JS SETELAH SEMUA FIREBASE SIAP
+       ========================================================= -->
+  <script src="app.js" type="module"></script>
 </body>
 </html>
