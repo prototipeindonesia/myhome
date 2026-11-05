@@ -1,6 +1,6 @@
 /* =========================================================
    Dreamland — Property Management CRM
-   FIREBASE EDITION (Final Stable Version)
+   FIREBASE EDITION (Super Admin Kelola Pemilik Rumah)
    ========================================================= */
 
 if (!window.FirebaseApp) {
@@ -64,7 +64,6 @@ let unsubNotifs = null;
 
 /* ---------------- Helpers ---------------- */
 const $  = (s, root = document) => root.querySelector(s);
-const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const initials = (name) => String(name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 const statusBadge = (s) => `<span class="status ${s}">${STATUS[s]?.label || s}</span>`;
@@ -128,7 +127,7 @@ function toast(msg, type = 'info') {
   }, 3200);
 }
 
-/* ---------------- AUTH ---------------- */
+/* ---------------- AUTH (DUAL LOGIN) ---------------- */
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     try {
@@ -148,13 +147,12 @@ onAuthStateChanged(auth, async (user) => {
         renderShellUser();
         goTo('dashboard');
       } else {
-        toast("Akun login valid, tapi profil data tidak ditemukan di Firestore.", "error");
-        alert("Anda berhasil login, tetapi data user tidak ditemukan di Firestore (collection 'users' dengan ID: " + user.uid + "). Pastikan Super Admin sudah membuatkan profil Anda.");
+        toast("Profil tidak ditemukan di Firestore.", "error");
         signOut(auth);
       }
     } catch (err) {
       console.error(err);
-      toast("Gagal memuat data user. Cek aturan (Rules) Firestore.", "error");
+      toast("Gagal memuat data user.", "error");
       signOut(auth);
     }
   } else {
@@ -169,36 +167,50 @@ onAuthStateChanged(auth, async (user) => {
 
 $('#loginForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const email = $('#loginEmail').value;
+  const email = $('#loginEmail').value.trim();
   const pass = $('#loginPassword').value;
   const btn = $('#btnLogin');
   const errDiv = $('#loginError');
   
-  btn.textContent = 'Memproses...';
-  btn.disabled = true;
+  btn.textContent = 'Memproses...'; btn.disabled = true;
   if (errDiv) errDiv.style.display = 'none';
 
   try {
+    // 1. Coba Login sebagai Admin/Legal/Superadmin (Firebase Auth)
     await signInWithEmailAndPassword(auth, email, pass);
   } catch (err) {
-    console.error("Login Error:", err);
-    let msg = "Terjadi kesalahan. Silakan coba lagi.";
-    if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-      msg = "Email atau password salah.";
-    } else if (err.code === 'auth/invalid-email') {
-      msg = "Format email tidak valid.";
-    } else if (err.code === 'auth/too-many-requests') {
-      msg = "Terlalu banyak percobaan. Tunggu beberapa saat.";
-    } else if (err.code === 'auth/operation-not-allowed') {
-      msg = "Metode login Email/Password belum diaktifkan di Firebase.";
-    }
-    if (errDiv) {
-      errDiv.textContent = msg;
-      errDiv.style.display = 'block';
+    // 2. Jika gagal, coba cari di Firestore (Login Pemilik Rumah)
+    try {
+      const q = query(collection(db, "users"), where("email", "==", email), where("password", "==", pass), where("role", "==", ROLE.USER));
+      const snap = await getDocs(q);
+      
+      if (!snap.empty) {
+        const userDoc = snap.docs[0];
+        const data = userDoc.data();
+        
+        state.session = { id: userDoc.id, ...data };
+        state.isSuperAdmin = false;
+        state.isAdmin = false;
+        state.isLegal = false;
+
+        $('#loginScreen').classList.add('hidden');
+        $('#app').classList.remove('hidden');
+        
+        setupRealtimeListeners();
+        renderNav();
+        renderShellUser();
+        goTo('dashboard');
+      } else {
+        throw new Error("Email atau password salah.");
+      }
+    } catch (firestoreErr) {
+      if (errDiv) {
+        errDiv.textContent = "Email atau password salah.";
+        errDiv.style.display = 'block';
+      }
     }
   } finally {
-    btn.textContent = 'Masuk';
-    btn.disabled = false;
+    btn.textContent = 'Masuk'; btn.disabled = false;
   }
 });
 
@@ -215,7 +227,7 @@ function setupRealtimeListeners() {
   });
 
   let reqQuery = collection(db, "requests");
-  if (!state.isAdmin && !state.isLegal) {
+  if (!state.isAdmin && !state.isLegal && state.session.role === ROLE.USER) {
     reqQuery = query(collection(db, "requests"), where("pemilikId", "==", state.session.id));
   }
   unsubRequests = onSnapshot(reqQuery, (snap) => {
@@ -245,7 +257,6 @@ function renderNav() {
       { id: 'perumahan', label: 'Perumahan', icon: '🏘️' },
       { id: 'pemilik', label: 'Data Pembeli', icon: '👥' },
       { id: 'requests', label: 'Pengajuan Retensi', icon: '📋' },
-      { id: 'users', label: 'Kelola Akun', icon: '🔐' },
       { id: 'help', label: 'Panduan', icon: '💡' },
     ];
   } else if (state.isAdmin) {
@@ -306,7 +317,6 @@ function renderPage() {
     requests:  { title: 'Pengajuan Retensi', sub: 'Pantau seluruh pengajuan' },
     new:       { title: 'Ajukan Retensi', sub: 'Lengkapi formulir pengajuan' },
     program:   { title: 'Program Retensi', sub: 'Informasi garansi retensi 100 hari' },
-    users:     { title: 'Kelola Akun', sub: 'Manajemen akses pengguna sistem' },
     help:      { title: 'Panduan', sub: 'Cara menggunakan Dreamland' },
   }[state.page] || { title: 'Dashboard', sub: '' };
 
@@ -327,7 +337,6 @@ function renderPage() {
       case 'new':       return renderNewRequest();
       case 'requests':  return (state.isAdmin || state.isSuperAdmin) ? renderAdminRequests() : renderUserRequests();
       case 'program':   return renderProgram();
-      case 'users':     return renderKelolaAkun();
       case 'help':      return renderHelp();
     }
   } catch (error) {
@@ -680,6 +689,7 @@ function applyFilterPemilik() {
       <td class="row-actions">
         <button class="btn btn-ghost btn-sm" data-action="view-documents" data-id="${u.id}">Dokumen</button>
         <button class="btn btn-ghost btn-sm" data-action="edit-pemilik" data-id="${u.id}">Ubah</button>
+        <button class="btn btn-danger btn-sm" data-action="delete-pemilik" data-id="${u.id}">Hapus</button>
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="5"><div class="empty">Belum ada data.</div></td></tr>`;
@@ -719,14 +729,12 @@ function openPemilikModal(id) {
       <div class="modal modal-lg">
         <div class="modal-head"><h3>${isEdit ? 'Ubah' : 'Tambah'} Pemilik</h3><button class="modal-close" data-action="close-modal">✕</button></div>
         <div class="modal-body">
-          ${!isEdit ? `<div style="background:#fef3c7; color:#b45309; padding:10px; border-radius:8px; margin-bottom:15px; font-size:13px;">
-            ⚠️ Untuk membuat akun login baru, daftarkan dulu email & password di <b>Firebase Console &gt; Authentication</b>, lalu masukkan profilnya di sini.
-          </div>` : ''}
           <form id="pemilikForm">
             <div class="form-grid">
-              <div class="field"><label>Nama *</label><input class="input" id="uNama" required value="${esc(u?.nama || '')}"></div>
-              <div class="field"><label>Email (UID Auth) *</label><input class="input" type="email" id="uEmail" required value="${esc(u?.email || '')}" ${isEdit ? 'disabled' : ''}></div>
-              <div class="field"><label>Blok *</label><input class="input" id="uBlok" required value="${esc(u?.blok || '')}"></div>
+              <div class="field"><label>Nama Lengkap *</label><input class="input" id="uNama" required value="${esc(u?.nama || '')}"></div>
+              <div class="field"><label>Email (Untuk Login) *</label><input class="input" type="email" id="uEmail" required value="${esc(u?.email || '')}"></div>
+              <div class="field"><label>Password *</label><input class="input" type="text" id="uPassword" required value="${esc(u?.password || '')}" placeholder="Min. 6 karakter"></div>
+              <div class="field"><label>Blok / No. Rumah *</label><input class="input" id="uBlok" required value="${esc(u?.blok || '')}"></div>
               <div class="field"><label>No. HP</label><input class="input" id="uPhone" value="${esc(u?.phone || '')}"></div>
               <div class="field full"><label>Tanggal Serah Terima *</label><input class="input" type="date" id="uTglSerah" required value="${u?.tanggalSerahTerima ? new Date(u.tanggalSerahTerima).toISOString().split('T')[0] : ''}"></div>
             </div>
@@ -760,6 +768,7 @@ function openPemilikModal(id) {
       const data = {
         nama: $('#uNama').value.trim(),
         email: $('#uEmail').value.trim(),
+        password: $('#uPassword').value, // Disimpan di Firestore
         blok: $('#uBlok').value.trim(),
         phone: $('#uPhone').value.trim(),
         tanggalSerahTerima: new Date($('#uTglSerah').value).toISOString(),
@@ -770,7 +779,10 @@ function openPemilikModal(id) {
       if (isEdit) {
         await updateDoc(doc(db, "users", u.id), data);
       } else {
-        toast('Untuk akun baru, buat di Firebase Auth terlebih dahulu.', 'info');
+        // Cek duplikasi email
+        const isExist = await getDocs(query(collection(db, "users"), where("email", "==", data.email)));
+        if(!isExist.empty) throw new Error("Email sudah terdaftar.");
+        
         await addDoc(collection(db, "users"), { ...data, createdAt: serverTimestamp() });
       }
       toast('Berhasil disimpan', 'success');
@@ -800,25 +812,6 @@ function openDocModal(userId) {
       </div>
     </div>`;
   document.body.style.overflow = 'hidden';
-}
-
-/* ---------------- KELOLA AKUN ---------------- */
-function renderKelolaAkun() {
-  $('#content').innerHTML = `
-    <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Aksi</th></tr></thead>
-      <tbody>
-        ${state.users.map(u => `
-          <tr>
-            <td><strong>${esc(u.nama)}</strong></td>
-            <td>${esc(u.email)}</td>
-            <td><span class="status ${u.role === 'superadmin' ? 'ditolak' : (u.role === 'admin' ? 'pengerjaan' : 'selesai')}">${u.role.toUpperCase()}</span></td>
-            <td>${u.id !== state.session.id ? `<button class="btn btn-danger btn-sm" data-action="delete-user" data-id="${u.id}">Hapus Akses</button>` : '<em>(Anda)</em>'}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table></div></div>
-  `;
 }
 
 /* ---------------- PENGAJUAN ---------------- */
@@ -1060,10 +1053,14 @@ document.addEventListener('click', async (e) => {
       }
       break;
     
-    case 'delete-user':
-      if (confirm("Hapus akses user ini? (Akun Auth harus dihapus manual dari Console)")) {
-        await deleteDoc(doc(db, "users", el.dataset.id));
-        toast('Akses dicabut');
+    case 'delete-pemilik':
+      if (confirm("Hapus pemilik rumah ini secara permanen?")) {
+        try {
+          await deleteDoc(doc(db, "users", el.dataset.id));
+          toast('Pemilik berhasil dihapus', 'success');
+        } catch (err) {
+          toast(err.message, 'error');
+        }
       }
       break;
 
