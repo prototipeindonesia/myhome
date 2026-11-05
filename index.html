@@ -62,7 +62,7 @@
         <div class="demo-box" style="margin-top: 20px;">
           <div class="demo-title">Informasi Sistem</div>
           <p class="muted" style="font-size: 12px; line-height: 1.5;">
-            Sistem terintegrasi dengan Firebase Google. Pastikan akun Anda sudah didaftarkan di Firebase Authentication (untuk Admin) atau di Firestore (untuk Pemilik Rumah).
+            Sistem terintegrasi dengan Firebase Google & Cloudinary. Pastikan akun Anda sudah didaftarkan di Firebase Authentication (untuk Admin) atau di Firestore (untuk Pemilik Rumah).
           </p>
         </div>
       </div>
@@ -155,7 +155,7 @@
   <!-- ==================== FIREBASE SDK & APP LOGIC ==================== -->
   <script type="module">
     // =========================================================
-    // 1. KONFIGURASI FIREBASE (Jangan diubah kecuali project baru)
+    // 1. KONFIGURASI FIREBASE
     // =========================================================
     const firebaseConfig = {
       apiKey: "AIzaSyBc3GNZ3PBRQbqPGZmV_01rU6RZEVSo36Q",
@@ -168,11 +168,11 @@
 
     // =========================================================
     // 2. IMPORT MODUL FIREBASE (v10 Modular SDK via CDN)
+    //    (Storage dihapus karena pakai Cloudinary)
     // =========================================================
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
     import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
     // =========================================================
     // 3. INISIALISASI FIREBASE
@@ -180,17 +180,15 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const storage = getStorage(app);
 
     // =========================================================
     // 4. EKSPOS KE WINDOW (Agar app.js bisa mengakses)
     // =========================================================
     window.FirebaseApp = {
-      auth, db, storage,
+      auth, db,
       fb: {
         signInWithEmailAndPassword, signOut, onAuthStateChanged,
-        collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, addDoc,
-        ref, uploadBytes, getDownloadURL
+        collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, addDoc
       }
     };
   </script>
