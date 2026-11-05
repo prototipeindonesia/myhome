@@ -3,7 +3,13 @@
    FIREBASE EDITION (Super Admin, Admin, Legal, User)
    ========================================================= */
 
-const { auth, db, storage, functions: fb } = window.FirebaseApp;
+// Pastikan Firebase sudah ter-load dari index.html
+if (!window.FirebaseApp) {
+  console.error("Firebase belum siap! Pastikan index.html sudah memuat Firebase SDK.");
+  throw new Error("FirebaseApp is not defined");
+}
+
+const { auth, db, storage, fb } = window.FirebaseApp;
 const { 
   signInWithEmailAndPassword, signOut, onAuthStateChanged, 
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, 
@@ -54,7 +60,6 @@ const state = {
   perumahan: [],
   requests: [],
   notifications: [],
-  draftPhotos: [],
   isSuperAdmin: false,
   isAdmin: false,
   isLegal: false,
@@ -68,16 +73,26 @@ let unsubNotifs = null;
 const $  = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-const uid = (p = 'REQ') => `${p}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
-const fmtDateTime = (iso) => iso ? new Date(iso).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
-const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
 const initials = (name) => String(name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 const statusBadge = (s) => `<span class="status ${s}">${STATUS[s]?.label || s}</span>`;
 
-function timeAgo(iso) {
-  if (!iso) return '-';
-  const diff = Date.now() - new Date(iso).getTime();
+// Fungsi Format Tanggal (Aman dari Firestore Timestamp)
+function formatDate(val) {
+  if (!val) return '-';
+  const date = val.toDate ? val.toDate() : new Date(val);
+  return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatDateTime(val) {
+  if (!val) return '-';
+  const date = val.toDate ? val.toDate() : new Date(val);
+  return date.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function timeAgo(val) {
+  if (!val) return '-';
+  const date = val.toDate ? val.toDate() : new Date(val);
+  const diff = Date.now() - date.getTime();
   const m = Math.floor(diff / 60000);
   if (m < 1) return 'baru saja';
   if (m < 60) return `${m} menit lalu`;
@@ -85,7 +100,7 @@ function timeAgo(iso) {
   if (h < 24) return `${h} jam lalu`;
   const d = Math.floor(h / 24);
   if (d < 30) return `${d} hari lalu`;
-  return fmtDate(iso);
+  return formatDate(val);
 }
 
 function getWarrantyStatus(tglSerahTerima) {
@@ -96,7 +111,7 @@ function getWarrantyStatus(tglSerahTerima) {
   const diff = limit - now;
   
   if (diff <= 0) {
-    return { daysLeft: 0, expired: true, text: 'Masa retensi telah habis (Dikenakan biaya tambahan)' };
+    return { daysLeft: 0, expired: true, text: 'Masa retensi telah habis' };
   }
   const daysLeft = Math.ceil(diff / (24 * 60 * 60 * 1000));
   return { daysLeft, expired: false, text: `Sisa masa retensi: ${daysLeft} hari lagi` };
@@ -139,12 +154,14 @@ onAuthStateChanged(auth, async (user) => {
         renderShellUser();
         goTo('dashboard');
       } else {
-        toast("Akun tidak terdaftar di database.", "error");
+        toast("Akun login valid, tapi profil data tidak ditemukan di Firestore.", "error");
+        alert("Anda berhasil login, tetapi data user tidak ditemukan di Firestore (collection 'users' dengan ID: " + user.uid + "). Pastikan Super Admin sudah membuatkan profil Anda.");
         signOut(auth);
       }
     } catch (err) {
       console.error(err);
-      toast("Gagal memuat data user.", "error");
+      toast("Gagal memuat data user. Cek aturan (Rules) Firestore.", "error");
+      signOut(auth);
     }
   } else {
     state.session = null;
@@ -161,13 +178,33 @@ $('#loginForm')?.addEventListener('submit', async (e) => {
   const email = $('#loginEmail').value;
   const pass = $('#loginPassword').value;
   const btn = $('#btnLogin');
+  const errDiv = $('#loginError');
+  
   btn.textContent = 'Memproses...';
+  btn.disabled = true;
+  if (errDiv) errDiv.style.display = 'none';
+
   try {
     await signInWithEmailAndPassword(auth, email, pass);
   } catch (err) {
-    toast("Login gagal: Email atau password salah.", "error");
+    console.error("Login Error:", err);
+    let msg = "Terjadi kesalahan. Silakan coba lagi.";
+    if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      msg = "Email atau password salah.";
+    } else if (err.code === 'auth/invalid-email') {
+      msg = "Format email tidak valid.";
+    } else if (err.code === 'auth/too-many-requests') {
+      msg = "Terlalu banyak percobaan. Tunggu beberapa saat.";
+    } else if (err.code === 'auth/operation-not-allowed') {
+      msg = "Metode login Email/Password belum diaktifkan di Firebase.";
+    }
+    if (errDiv) {
+      errDiv.textContent = msg;
+      errDiv.style.display = 'block';
+    }
   } finally {
     btn.textContent = 'Masuk';
+    btn.disabled = false;
   }
 });
 
@@ -181,7 +218,7 @@ function setupRealtimeListeners() {
   // 1. Users Listener
   unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
     state.users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (['pemilik', 'users'].includes(state.page)) renderPage();
+    if (['pemilik', 'users', 'dashboard'].includes(state.page)) renderPage();
   });
 
   // 2. Requests Listener
@@ -191,13 +228,19 @@ function setupRealtimeListeners() {
   }
   unsubRequests = onSnapshot(reqQuery, (snap) => {
     state.requests = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (['dashboard', 'requests', 'perumahan'].includes(state.page)) renderPage();
+    if (['dashboard', 'requests'].includes(state.page)) renderPage();
   });
 
   // 3. Notifications Listener
   const notifTarget = (state.isAdmin || state.isLegal) ? 'admin' : state.session.id;
-  unsubNotifs = onSnapshot(query(collection(db, "notifications"), where("userId", "==", notifTarget), orderBy("createdAt", "desc")), (snap) => {
+  unsubNotifs = onSnapshot(query(collection(db, "notifications"), where("userId", "==", notifTarget)), (snap) => {
     state.notifications = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Urutkan manual
+    state.notifications.sort((a, b) => {
+      const tA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+      const tB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+      return tB - tA;
+    });
     updateNotifBadge();
     renderNotifDropdown();
   });
@@ -248,7 +291,7 @@ function renderNav() {
 
 function renderShellUser() {
   const s = state.session;
-  const roleLabel = s.role.toUpperCase();
+  const roleLabel = (s.role || 'user').toUpperCase();
   const chip = $('#userChip');
   if(chip) chip.innerHTML = `
     <div class="avatar">${esc(initials(s.nama))}</div>
@@ -329,7 +372,7 @@ function renderNotifDropdown() {
       <div class="notif-icon">🔔</div>
       <div class="notif-content">
         <p>${esc(n.message)}</p>
-        <span class="notif-time">${timeAgo(n.createdAt?.toDate ? n.createdAt.toDate() : n.createdAt)}</span>
+        <span class="notif-time">${timeAgo(n.createdAt)}</span>
       </div>
     </div>
   `).join('');
@@ -363,8 +406,16 @@ const countBy = (list) => {
   list.forEach(r => { if (c[r.status] !== undefined) c[r.status]++; });
   return c;
 };
-const getMyRequests = () => state.requests.filter(r => r.pemilikId === state.session.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-const getAllRequests = () => [...state.requests].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+const getMyRequests = () => state.requests.filter(r => r.pemilikId === state.session.id).sort((a, b) => {
+  const tA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+  const tB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+  return tB - tA;
+});
+const getAllRequests = () => [...state.requests].sort((a, b) => {
+  const tA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+  const tB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+  return tB - tA;
+});
 const getPerumahanName = (id) => (state.perumahan || []).find(p => p.id === id)?.nama || '—';
 
 function statGrid(items) {
@@ -383,7 +434,6 @@ function emptyState(icon, title, desc, btnLabel, btnPage) {
   </div>`;
 }
 
-// Upload helper (Return URL)
 async function uploadFile(file, path) {
   const storageRef = ref(storage, path);
   await uploadBytes(storageRef, file);
@@ -391,7 +441,7 @@ async function uploadFile(file, path) {
 }
 
 /* =========================================================
-   DASHBOARD (ADMIN, USER, LEGAL)
+   DASHBOARD
    ========================================================= */
 function renderAdminDashboard() {
   const all = getAllRequests();
@@ -433,7 +483,7 @@ function renderAdminDashboard() {
 
 function renderUserDashboard() {
   const mine = getMyRequests();
-  const firstName = state.session.nama.split(' ')[0];
+  const firstName = (state.session.nama || 'User').split(' ')[0];
   const warranty = getWarrantyStatus(state.session.tanggalSerahTerima);
 
   $('#content').innerHTML = `
@@ -442,7 +492,7 @@ function renderUserDashboard() {
         <h4>Status Garansi Retensi (100 Hari)</h4>
         <div class="cd-days">${warranty.expired ? 'Kedaluwarsa' : warranty.daysLeft + ' Hari'}</div>
         <div class="cd-desc">${warranty.text}</div>
-        <div class="cd-desc" style="font-size:11px;margin-top:8px;opacity:0.7">Tgl Serah Terima: ${state.session.tanggalSerahTerima ? fmtDate(state.session.tanggalSerahTerima) : '-'}</div>
+        <div class="cd-desc" style="font-size:11px;margin-top:8px;opacity:0.7">Tgl Serah Terima: ${formatDate(state.session.tanggalSerahTerima)}</div>
       </div>
       <div class="cd-icon">${warranty.expired ? '⚠️' : '🛡️'}</div>
     </div>
@@ -490,13 +540,13 @@ function miniRow(r) {
   return `
     <div class="mini-row" data-action="open-detail" data-id="${r.id}">
       <span class="mini-dot" style="background:${STATUS[r.status]?.color || '#ccc'}"></span>
-      <div class="mini-body"><strong>${esc(r.title)}</strong><small>${esc(r.category)} · ${timeAgo(r.createdAt?.toDate ? r.createdAt.toDate() : r.createdAt)}</small></div>
+      <div class="mini-body"><strong>${esc(r.title)}</strong><small>${esc(r.category)} · ${timeAgo(r.createdAt)}</small></div>
       ${statusBadge(r.status)}
     </div>`;
 }
 
 /* =========================================================
-   PERUMAHAN (CRUD via Firebase)
+   PERUMAHAN
    ========================================================= */
 async function renderPerumahan() {
   $('#content').innerHTML = `<div style="text-align:center; padding:50px;">Memuat data perumahan...</div>`;
@@ -536,7 +586,7 @@ function applyFilterPerumahan() {
   tbody.innerHTML = list.map(p => {
     const count = state.users.filter(u => u.role === ROLE.USER && u.perumahanId === p.id).length;
     return `<tr>
-      <td><span class="mono">${p.id}</span></td>
+      <td><span class="mono">${p.id.slice(0, 6)}</span></td>
       <td><strong>${esc(p.nama)}</strong></td>
       <td>${esc(p.lokasi)}</td>
       <td>${p.totalUnit || 0}</td>
@@ -600,7 +650,7 @@ async function openPemilikPerumahanModal(perumahanId) {
         <div class="modal-body">
           ${users.length ? users.map(u => `
             <div style="display:flex;justify-content:space-between;padding:10px;border:1px solid #eee;border-radius:8px;margin-bottom:8px;">
-              <div><strong>${esc(u.nama)}</strong><br><small>Blok ${u.blok}</small></div>
+              <div><strong>${esc(u.nama)}</strong><br><small>Blok ${u.blok || '-'}</small></div>
               <button class="btn btn-ghost btn-sm" data-action="view-documents" data-id="${u.id}">Lihat Dokumen</button>
             </div>
           `).join('') : '<p class="muted">Belum ada pemilik.</p>'}
@@ -685,10 +735,13 @@ function openPemilikModal(id) {
       <div class="modal modal-lg">
         <div class="modal-head"><h3>${isEdit ? 'Ubah' : 'Tambah'} Pemilik</h3><button class="modal-close" data-action="close-modal">✕</button></div>
         <div class="modal-body">
+          ${!isEdit ? `<div style="background:#fef3c7; color:#b45309; padding:10px; border-radius:8px; margin-bottom:15px; font-size:13px;">
+            ⚠️ Untuk membuat akun login baru, daftarkan dulu email & password di <b>Firebase Console &gt; Authentication</b>, lalu masukkan profilnya di sini.
+          </div>` : ''}
           <form id="pemilikForm">
             <div class="form-grid">
               <div class="field"><label>Nama *</label><input class="input" id="uNama" required value="${esc(u?.nama || '')}"></div>
-              <div class="field"><label>Email *</label><input class="input" type="email" id="uEmail" required value="${esc(u?.email || '')}" ${isEdit ? 'disabled' : ''}></div>
+              <div class="field"><label>Email (UID Auth) *</label><input class="input" type="email" id="uEmail" required value="${esc(u?.email || '')}" ${isEdit ? 'disabled' : ''}></div>
               <div class="field"><label>Blok *</label><input class="input" id="uBlok" required value="${esc(u?.blok || '')}"></div>
               <div class="field"><label>No. HP</label><input class="input" id="uPhone" value="${esc(u?.phone || '')}"></div>
               <div class="field full"><label>Tanggal Serah Terima *</label><input class="input" type="date" id="uTglSerah" required value="${u?.tanggalSerahTerima ? new Date(u.tanggalSerahTerima).toISOString().split('T')[0] : ''}"></div>
@@ -733,9 +786,8 @@ function openPemilikModal(id) {
       if (isEdit) {
         await updateDoc(doc(db, "users", u.id), data);
       } else {
-        // Karena pembuatan akun Auth hanya bisa via Admin SDK, kita sarankan user register sendiri
-        // atau ini hanya menyimpan data profil saja (tidak bisa login)
         toast('Untuk akun baru, buat di Firebase Auth terlebih dahulu.', 'info');
+        // Simpan profile saja. User harus dibuat manual di Auth, atau via Backend.
         await addDoc(collection(db, "users"), { ...data, createdAt: serverTimestamp() });
       }
       toast('Berhasil disimpan', 'success');
@@ -789,10 +841,9 @@ function renderKelolaAkun() {
 }
 
 /* =========================================================
-   PENGAJUAN (USER & ADMIN)
+   PENGAJUAN
    ========================================================= */
 function renderNewRequest() {
-  state.draftPhotos = [];
   $('#content').innerHTML = `
     <div style="max-width:800px">
       <div class="card card-pad">
@@ -877,7 +928,7 @@ function renderUserRequests() {
   const mine = getMyRequests();
   $('#content').innerHTML = `
     <div class="req-list">
-      ${mine.map(r => `
+      ${mine.length ? mine.map(r => `
         <div class="req-card" data-action="open-detail" data-id="${r.id}">
           <div class="req-thumb">🛠️</div>
           <div class="req-body">
@@ -885,7 +936,7 @@ function renderUserRequests() {
             <div class="req-meta">${statusBadge(r.status)}</div>
           </div>
         </div>
-      `).join('')}
+      `).join('') : emptyState('📭', 'Belum ada pengajuan', 'Ajukan retensi rumah Anda sekarang.', 'Ajukan Retensi', 'new')}
     </div>
   `;
 }
@@ -894,11 +945,11 @@ async function openDetail(id) {
   const r = state.requests.find(x => x.id === id);
   if (!r) return;
   
-  const timelineHtml = r.timeline.map(t => `
+  const timelineHtml = (r.timeline || []).map(t => `
     <div class="tl-item">
       <span class="tl-dot"></span>
-      <strong>${t.status}</strong> - ${t.note}<br>
-      <small>${fmtDateTime(t.at)}</small>
+      <strong>${STATUS[t.status]?.label || t.status}</strong> - ${esc(t.note)}<br>
+      <small>${formatDateTime(t.at)}</small>
       ${t.photos && t.photos.length ? `<div class="tl-photos">${t.photos.map(p => `<img src="${p}" data-action="zoom-src" data-src="${p}">`).join('')}</div>` : ''}
     </div>
   `).join('');
@@ -949,7 +1000,7 @@ async function saveRequestChanges(id) {
   let photoUrl = null;
   if (photoFile) photoUrl = await uploadFile(photoFile, `progress/${Date.now()}`);
 
-  const newTimeline = [...r.timeline, {
+  const newTimeline = [...(r.timeline || []), {
     status: newStatus, note, by: state.session.nama, role: 'admin',
     at: new Date().toISOString(), photos: photoUrl ? [photoUrl] : []
   }];
@@ -969,9 +1020,43 @@ async function saveRequestChanges(id) {
   closeModal(); toast('Disimpan', 'success');
 }
 
-/* =========================================================
-   EVENT DELEGATION
-   ========================================================= */
+/* ---------------- PROGRAM & HELP ---------------- */
+function renderProgram() {
+  $('#content').innerHTML = `
+    <div class="program-hero">
+      <h2>🛡️ Program Garansi Retensi 100 Hari</h2>
+      <p>Perbaikan gratis untuk kerusakan yang timbul dalam 100 hari pertama sejak serah terima kunci.</p>
+    </div>
+    <div class="card card-pad">
+      <h3>Ketentuan</h3>
+      <ul style="margin:15px 0 15px 20px; line-height: 1.8;">
+        <li>Berlaku 100 hari sejak Tanggal Serah Terima.</li>
+        <li>Gratis biaya jasa & material untuk cacat produksi.</li>
+        <li>Setelah 100 hari, dikenakan biaya tambahan (diverifikasi Admin).</li>
+      </ul>
+      <button class="btn btn-primary" data-action="nav" data-page="new">Ajukan Retensi Sekarang</button>
+    </div>
+  `;
+}
+
+function renderHelp() {
+  $('#content').innerHTML = `
+    <div class="card card-pad">
+      <h3>Panduan Singkat</h3>
+      <p style="margin-top:10px; line-height:1.8;">
+        1. Login menggunakan Email & Password yang didaftarkan.<br>
+        2. Pemilik rumah dapat mengajukan retensi via menu "Ajukan Retensi".<br>
+        3. Admin/Superadmin akan memverifikasi dan mengubah status.<br>
+        4. Pantau notifikasi di ikon lonceng 🔔.
+      </p>
+    </div>
+  `;
+}
+
+/* ---------------- SIDEBAR & EVENT ---------------- */
+function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarBackdrop')?.classList.add('show'); }
+function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarBackdrop')?.classList.remove('show'); }
+
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
@@ -1008,15 +1093,16 @@ document.addEventListener('click', async (e) => {
       $('#lightbox').classList.remove('hidden');
       break;
     }
+
+    case 'open-notif':
+      await updateDoc(doc(db, "notifications", el.dataset.id), { isRead: true });
+      $('#notifDropdown').classList.add('hidden');
+      break;
   }
 });
 
 function closeModal() { $('#modalRoot').innerHTML = ''; document.body.style.overflow = ''; }
 $('#lightbox')?.addEventListener('click', () => $('#lightbox').classList.add('hidden'));
 
-/* =========================================================
-   INIT
-   ========================================================= */
-document.addEventListener('DOMContentLoaded', () => {
-  // Initialization sudah ditangani oleh onAuthStateChanged
-});
+$('#menuToggle')?.addEventListener('click', openSidebar);
+$('#sidebarBackdrop')?.addEventListener('click', closeSidebar);
