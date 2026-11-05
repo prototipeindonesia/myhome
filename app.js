@@ -1,7 +1,15 @@
 /* =========================================================
-   Dreamland — Property Management CRM (Retensi Edition)
-   FINAL VERSION: 8 Revisions + Anti-Blank + Notifications
+   Dreamland — Property Management CRM
+   FIREBASE EDITION (Super Admin, Admin, Legal, User)
    ========================================================= */
+
+const { auth, db, storage, functions: fb } = window.FirebaseApp;
+const { 
+  signInWithEmailAndPassword, signOut, onAuthStateChanged, 
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, 
+  query, where, orderBy, onSnapshot, serverTimestamp, addDoc,
+  ref, uploadBytes, getDownloadURL 
+} = fb;
 
 /* ---------------- Status & Konstanta ---------------- */
 const STATUS = {
@@ -13,7 +21,6 @@ const STATUS = {
   selesai:     { label: 'Selesai',     short: 'Selesai',     color: '#10b981', bg: '#d1fae5' },
   ditolak:     { label: 'Ditolak',     short: 'Ditolak',     color: '#ef4444', bg: '#fee2e2' },
 };
-
 const STATUS_FLOW = ['diajukan', 'verifikasi', 'survei', 'pengerjaan', 'pemeriksaan', 'selesai'];
 const STATUS_ALL  = [...STATUS_FLOW, 'ditolak'];
 
@@ -24,32 +31,38 @@ const CATEGORIES = [
 ];
 const PRIORITIES = ['Rendah', 'Sedang', 'Tinggi'];
 
-const NAV = {
-  admin: [
-    { id: 'dashboard', label: 'Dashboard',         icon: '📊' },
-    { id: 'perumahan', label: 'Perumahan',         icon: '🏘️' },
-    { id: 'pemilik',   label: 'Data Pembeli',      icon: '👥' },
-    { id: 'requests',  label: 'Pengajuan Retensi', icon: '📋' },
-    { id: 'help',      label: 'Panduan',           icon: '💡' },
-  ],
-  user: [
-    { id: 'dashboard', label: 'Dashboard',         icon: '📊' },
-    { id: 'program',   label: 'Program Retensi',   icon: '🎁' },
-    { id: 'new',       label: 'Ajukan Retensi',    icon: '➕' },
-    { id: 'requests',  label: 'Pengajuan Saya',    icon: '📋' },
-    { id: 'help',      label: 'Panduan',           icon: '💡' },
-  ],
+const ROLE = {
+  SUPERADMIN: 'superadmin',
+  ADMIN: 'admin',
+  LEGAL: 'legal',
+  USER: 'user'
 };
 
-const PAGE_META = {
-  dashboard: { title: 'Dashboard',         sub: 'Ringkasan sistem Dreamland' },
-  perumahan: { title: 'Perumahan',         sub: 'Kelola data perumahan' },
-  pemilik:   { title: 'Data Pembeli',      sub: 'Kelola data pembeli & dokumen retensi' },
-  requests:  { title: 'Pengajuan Retensi', sub: 'Pantau seluruh pengajuan retensi' },
-  new:       { title: 'Ajukan Retensi',    sub: 'Lengkapi formulir pengajuan' },
-  program:   { title: 'Program Retensi',   sub: 'Informasi garansi retensi 100 hari' },
-  help:      { title: 'Panduan',           sub: 'Cara menggunakan Dreamland' },
+const DOC_LABELS = {
+  ktp: 'KTP & NPWP Suami Istri *', bukuNikah: 'Buku Nikah *', skKerja: 'SK Kerja',
+  slipGaji: 'Slip Gaji 3 Bulan', rekKoran: 'Rek Koran 3 Bulan', kk: 'Kartu Keluarga',
+  shm: 'SHM *', imb: 'IMB', pbb: 'PBB *', fotoRumah: 'Foto Rumah'
 };
+const DOC_KEYS = Object.keys(DOC_LABELS);
+const REQUIRED_DOCS = ['ktp', 'bukuNikah', 'shm', 'pbb'];
+
+/* ---------------- State ---------------- */
+const state = {
+  session: null,
+  page: 'dashboard',
+  users: [],
+  perumahan: [],
+  requests: [],
+  notifications: [],
+  draftPhotos: [],
+  isSuperAdmin: false,
+  isAdmin: false,
+  isLegal: false,
+};
+
+let unsubRequests = null;
+let unsubUsers = null;
+let unsubNotifs = null;
 
 /* ---------------- Helpers ---------------- */
 const $  = (s, root = document) => root.querySelector(s);
@@ -89,175 +102,7 @@ function getWarrantyStatus(tglSerahTerima) {
   return { daysLeft, expired: false, text: `Sisa masa retensi: ${daysLeft} hari lagi` };
 }
 
-/* ---------------- Storage & State (v4) ---------------- */
-const store = {
-  get(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } },
-  set(k, v)   { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { toast('Penyimpanan penuh.', 'error'); return false; } },
-  del(k)      { localStorage.removeItem(k); },
-};
-
-// Upgrade ke v4 untuk memuat struktur notifikasi baru
-const K_USERS    = 'dl_users_v4';
-const K_PERUMAHAN= 'dl_perumahan_v4';
-const K_REQ      = 'dl_requests_v4';
-const K_SESSION  = 'dl_session_v4';
-const K_NOTIF    = 'dl_notifications_v4'; 
-
-const state = {
-  session: null,
-  page: 'dashboard',
-  users: [],
-  perumahan: [],
-  requests: [],
-  notifications: [],
-  draftPhotos: [],
-};
-
-let lastRequestCount = 0; // Untuk Polling Real-time Admin
-
-/* ---------------- Seed Data ---------------- */
-function seedPerumahan() {
-  return [
-    { id: 'P-01', nama: 'Dreamland Residence', lokasi: 'Bogor, Jawa Barat', totalUnit: 120, deskripsi: 'Perumahan modern konsep hijau.' },
-    { id: 'P-02', nama: 'Dreamland Garden', lokasi: 'Depok, Jawa Barat', totalUnit: 80, deskripsi: 'Cluster eksklusif dengan taman pusat.' },
-  ];
-}
-
-function seedUsers() {
-  const now = Date.now();
-  return [
-    { id: 'U-01', username: 'admin', password: 'admin123', role: 'admin',
-      nama: 'Admin Dreamland', phone: '021-555-0123', email: 'admin@infodreamland.my.id',
-      perumahanId: null, blok: null, createdAt: new Date(now - 60*86400000).toISOString(), tanggalSerahTerima: null, dokumen: {} },
-    { id: 'U-02', username: 'budi', password: '123456', role: 'user',
-      nama: 'Budi Santoso', phone: '0812-3456-7890', email: 'budi@email.com',
-      perumahanId: 'P-01', blok: 'A-12', createdAt: new Date(now - 40*86400000).toISOString(), 
-      tanggalSerahTerima: new Date(now - 30*86400000).toISOString(),
-      dokumen: { 
-        ktp: 'https://placehold.co/400x250?text=KTP+Budi', 
-        npwp: 'https://placehold.co/400x250?text=NPWP+Budi', 
-        bukuNikah: 'https://placehold.co/400x250?text=Buku+Nikah', 
-        shm: 'https://placehold.co/400x250?text=SHM', 
-        pbb: 'https://placehold.co/400x250?text=PBB' 
-      } 
-    },
-    { id: 'U-03', username: 'siti', password: '123456', role: 'user',
-      nama: 'Siti Rahmawati', phone: '0813-9876-5432', email: 'siti@email.com',
-      perumahanId: 'P-02', blok: 'B-07', createdAt: new Date(now - 150*86400000).toISOString(), 
-      tanggalSerahTerima: new Date(now - 120*86400000).toISOString(),
-      dokumen: { 
-        ktp: 'https://placehold.co/400x250?text=KTP+Siti', 
-        npwp: 'https://placehold.co/400x250?text=NPWP+Siti', 
-        bukuNikah: 'https://placehold.co/400x250?text=Buku+Nikah', 
-        shm: 'https://placehold.co/400x250?text=SHM', 
-        pbb: 'https://placehold.co/400x250?text=PBB' 
-      } 
-    },
-  ];
-}
-
-function seedRequests() {
-  const now = Date.now();
-  const d = (days) => new Date(now - days * 86400000).toISOString();
-  return [
-    {
-      id: 'REQ-A1B2', pemilikId: 'U-02', ownerName: 'Budi Santoso',
-      perumahanId: 'P-01', perumahanNama: 'Dreamland Residence',
-      blok: 'A-12', phone: '0812-3456-7890',
-      title: 'Retensi Dapur & Penggantian Kitchen Set',
-      category: 'Retensi Struktur', priority: 'Tinggi',
-      description: 'Dapur lama sudah tidak representatif. Ingin retensi total dengan kitchen set baru.',
-      photos: [], status: 'pengerjaan', assignedTo: 'CV Karya Bangun', estimatedCost: 0,
-      createdAt: d(14), updatedAt: d(2),
-      timeline: [
-        { status: 'diajukan',    note: 'Pengajuan retensi dibuat.', by: 'Budi Santoso', role: 'user', at: d(14), photos: [] },
-        { status: 'verifikasi',  note: 'Kelengkapan sesuai. Pemilik setuju dilanjutkan.', by: 'Budi Santoso', role: 'user', at: d(12), photos: [] },
-        { status: 'survei',      note: 'Survei lokasi selesai.', by: 'Admin Dreamland', role: 'admin', at: d(9), photos: ['https://placehold.co/400x300?text=Foto+Survei'] },
-        { status: 'pengerjaan',  note: 'Pekerjaan dimulai oleh CV Karya Bangun.', by: 'Admin Dreamland', role: 'admin', at: d(2), photos: [] },
-      ],
-    },
-    {
-      id: 'REQ-D4E5', pemilikId: 'U-03', ownerName: 'Siti Rahmawati',
-      perumahanId: 'P-02', perumahanNama: 'Dreamland Garden',
-      blok: 'B-07', phone: '0813-9876-5432',
-      title: 'Retensi Atap Bocor',
-      category: 'Retensi Atap', priority: 'Tinggi',
-      description: 'Atap bocor saat hujan deras. Mohon diperiksa.',
-      photos: [], status: 'verifikasi', assignedTo: '', estimatedCost: 1500000,
-      createdAt: d(5), updatedAt: d(1),
-      timeline: [
-        { status: 'diajukan',   note: 'Pengajuan dibuat.', by: 'Siti Rahmawati', role: 'user', at: d(5), photos: [] },
-        { status: 'verifikasi', note: 'Masa garansi habis. Dikenakan biaya Rp 1.500.000. Menunggu persetujuan pemilik.', by: 'Admin Dreamland', role: 'admin', at: d(1), photos: [] },
-      ],
-    },
-  ];
-}
-
-/* ---------------- [NEW] Notifikasi System ---------------- */
-function addNotification(userId, message, requestId) {
-  state.notifications.push({
-    id: uid('NTF'),
-    userId,
-    message,
-    requestId,
-    isRead: false,
-    createdAt: new Date().toISOString()
-  });
-  persistAll();
-  updateNotifBadge();
-}
-
-function updateNotifBadge() {
-  if (!state.session) return;
-  const userId = state.session.role === 'admin' ? 'admin' : state.session.id;
-  const unread = state.notifications.filter(n => n.userId === userId && !n.isRead).length;
-  const badge = $('#notifBadge');
-  if (badge) {
-    if (unread > 0) {
-      badge.textContent = unread > 9 ? '9+' : unread;
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
-    }
-  }
-  renderNotifDropdown();
-}
-
-function renderNotifDropdown() {
-  const list = $('#notifList');
-  if (!list || !state.session) return;
-
-  const userId = state.session.role === 'admin' ? 'admin' : state.session.id;
-  const myNotifs = state.notifications
-    .filter(n => n.userId === userId)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-  if (myNotifs.length === 0) {
-    list.innerHTML = `<div class="empty" style="padding: 30px 20px;"><p class="muted" style="font-size: 13px;">Belum ada notifikasi.</p></div>`;
-    return;
-  }
-
-  list.innerHTML = myNotifs.map(n => `
-    <div class="notif-item ${n.isRead ? '' : 'unread'}" data-action="open-notif" data-id="${n.id}" data-req="${n.requestId}">
-      <div class="notif-icon">🔔</div>
-      <div class="notif-content">
-        <p>${esc(n.message)}</p>
-        <span class="notif-time">${timeAgo(n.createdAt)}</span>
-      </div>
-    </div>
-  `).join('');
-}
-
-function markNotifAsRead(id) {
-  const n = state.notifications.find(x => x.id === id);
-  if (n) {
-    n.isRead = true;
-    persistAll();
-    updateNotifBadge();
-  }
-}
-
-/* ---------------- Toast & Persistence ---------------- */
+/* ---------------- Toast ---------------- */
 function toast(msg, type = 'info') {
   const wrap = $('#toastWrap');
   if(!wrap) return;
@@ -274,57 +119,126 @@ function toast(msg, type = 'info') {
   }, 3200);
 }
 
-function persistAll() {
-  store.set(K_USERS, state.users);
-  store.set(K_PERUMAHAN, state.perumahan);
-  store.set(K_REQ, state.requests);
-  store.set(K_NOTIF, state.notifications);
-}
+/* ---------------- AUTH & INIT ---------------- */
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    try {
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        state.session = { id: user.uid, ...data };
+        state.isSuperAdmin = data.role === ROLE.SUPERADMIN;
+        state.isAdmin = data.role === ROLE.ADMIN || state.isSuperAdmin;
+        state.isLegal = data.role === ROLE.LEGAL;
 
-/* ---------------- Auth & Navigation ---------------- */
-function showLogin() { 
-  const l = $('#loginScreen'); if(l) l.classList.remove('hidden'); 
-  const a = $('#app'); if(a) a.classList.add('hidden'); 
-}
-
-function enterApp() {
-  const l = $('#loginScreen'); if(l) l.classList.add('hidden');
-  const a = $('#app'); if(a) a.classList.remove('hidden');
-  state.page = 'dashboard';
-  renderNav(); renderShellUser(); updateNotifBadge(); renderPage();
-  
-  lastRequestCount = state.requests.length;
-}
-
-function renderShellUser() {
-  const s = state.session;
-  if(!s) return;
-  const chip = $('#userChip');
-  if(chip) chip.innerHTML = `
-    <div class="avatar">${esc(initials(s.nama))}</div>
-    <div class="uc-text">
-      <strong>${esc(s.nama)}</strong>
-      <small>${s.role === 'admin' ? 'Admin / Pengelola' : (s.blok ? 'Blok ' + esc(s.blok) : 'Pemilik Rumah')}</small>
-    </div>`;
-  const badge = $('#roleBadge');
-  if(badge) {
-    badge.textContent = s.role === 'admin' ? 'Admin / Pengelola' : 'Pemilik Rumah';
-    badge.className = 'role-badge' + (s.role === 'admin' ? ' admin' : '');
+        $('#loginScreen').classList.add('hidden');
+        $('#app').classList.remove('hidden');
+        
+        setupRealtimeListeners();
+        renderNav();
+        renderShellUser();
+        goTo('dashboard');
+      } else {
+        toast("Akun tidak terdaftar di database.", "error");
+        signOut(auth);
+      }
+    } catch (err) {
+      console.error(err);
+      toast("Gagal memuat data user.", "error");
+    }
+  } else {
+    state.session = null;
+    if(unsubRequests) unsubRequests();
+    if(unsubUsers) unsubUsers();
+    if(unsubNotifs) unsubNotifs();
+    $('#loginScreen').classList.remove('hidden');
+    $('#app').classList.add('hidden');
   }
-}
+});
 
-function logout() {
-  store.del(K_SESSION);
-  state.session = null;
-  closeModal();
-  $('#notifDropdown')?.classList.add('hidden');
-  showLogin();
+$('#loginForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('#loginEmail').value;
+  const pass = $('#loginPassword').value;
+  const btn = $('#btnLogin');
+  btn.textContent = 'Memproses...';
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+  } catch (err) {
+    toast("Login gagal: Email atau password salah.", "error");
+  } finally {
+    btn.textContent = 'Masuk';
+  }
+});
+
+$('#btnLogout')?.addEventListener('click', () => {
+  signOut(auth);
   toast('Anda telah keluar', 'info');
+});
+
+/* ---------------- REALTIME LISTENERS ---------------- */
+function setupRealtimeListeners() {
+  // 1. Users Listener
+  unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+    state.users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (['pemilik', 'users'].includes(state.page)) renderPage();
+  });
+
+  // 2. Requests Listener
+  let reqQuery = collection(db, "requests");
+  if (!state.isAdmin && !state.isLegal) {
+    reqQuery = query(collection(db, "requests"), where("pemilikId", "==", state.session.id));
+  }
+  unsubRequests = onSnapshot(reqQuery, (snap) => {
+    state.requests = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (['dashboard', 'requests', 'perumahan'].includes(state.page)) renderPage();
+  });
+
+  // 3. Notifications Listener
+  const notifTarget = (state.isAdmin || state.isLegal) ? 'admin' : state.session.id;
+  unsubNotifs = onSnapshot(query(collection(db, "notifications"), where("userId", "==", notifTarget), orderBy("createdAt", "desc")), (snap) => {
+    state.notifications = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    updateNotifBadge();
+    renderNotifDropdown();
+  });
 }
 
+/* ---------------- NAVIGATION & SHELL ---------------- */
 function renderNav() {
-  if(!state.session) return;
-  const items = NAV[state.session.role] || NAV.user;
+  let items = [];
+  if (state.isSuperAdmin) {
+    items = [
+      { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+      { id: 'perumahan', label: 'Perumahan', icon: '🏘️' },
+      { id: 'pemilik', label: 'Data Pembeli', icon: '👥' },
+      { id: 'requests', label: 'Pengajuan Retensi', icon: '📋' },
+      { id: 'users', label: 'Kelola Akun', icon: '🔐' },
+      { id: 'help', label: 'Panduan', icon: '💡' },
+    ];
+  } else if (state.isAdmin) {
+    items = [
+      { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+      { id: 'perumahan', label: 'Perumahan', icon: '🏘️' },
+      { id: 'pemilik', label: 'Data Pembeli', icon: '👥' },
+      { id: 'requests', label: 'Pengajuan Retensi', icon: '📋' },
+      { id: 'help', label: 'Panduan', icon: '💡' },
+    ];
+  } else if (state.isLegal) {
+    items = [
+      { id: 'dashboard', label: 'Dashboard Legal', icon: '⚖️' },
+      { id: 'pemilik', label: 'Dokumen Hukum', icon: '📄' },
+      { id: 'help', label: 'Panduan', icon: '💡' },
+    ];
+  } else {
+    items = [
+      { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+      { id: 'program', label: 'Program Retensi', icon: '🎁' },
+      { id: 'new', label: 'Ajukan Retensi', icon: '➕' },
+      { id: 'requests', label: 'Pengajuan Saya', icon: '📋' },
+      { id: 'help', label: 'Panduan', icon: '💡' },
+    ];
+  }
+
   const navList = $('#navList');
   if(navList) navList.innerHTML = items.map(it => `
     <button class="nav-item ${it.id === state.page ? 'active' : ''}" data-action="nav" data-page="${it.id}">
@@ -332,94 +246,174 @@ function renderNav() {
     </button>`).join('');
 }
 
+function renderShellUser() {
+  const s = state.session;
+  const roleLabel = s.role.toUpperCase();
+  const chip = $('#userChip');
+  if(chip) chip.innerHTML = `
+    <div class="avatar">${esc(initials(s.nama))}</div>
+    <div class="uc-text">
+      <strong>${esc(s.nama)}</strong>
+      <small>${roleLabel}</small>
+    </div>`;
+  const badge = $('#roleBadge');
+  if(badge) {
+    badge.textContent = roleLabel;
+    badge.className = 'role-badge ' + (state.isAdmin || state.isSuperAdmin ? 'admin' : '');
+  }
+}
+
 function goTo(page) { state.page = page; renderNav(); renderPage(); }
 
 function renderPage() {
-  const meta = PAGE_META[state.page] || PAGE_META.dashboard;
+  const meta = {
+    dashboard: { title: state.isLegal ? 'Dashboard Legal' : 'Dashboard', sub: 'Ringkasan sistem Dreamland' },
+    perumahan: { title: 'Perumahan', sub: 'Kelola data perumahan' },
+    pemilik:   { title: state.isLegal ? 'Dokumen Hukum' : 'Data Pembeli', sub: 'Kelola data pembeli & dokumen' },
+    requests:  { title: 'Pengajuan Retensi', sub: 'Pantau seluruh pengajuan' },
+    new:       { title: 'Ajukan Retensi', sub: 'Lengkapi formulir pengajuan' },
+    program:   { title: 'Program Retensi', sub: 'Informasi garansi retensi 100 hari' },
+    users:     { title: 'Kelola Akun', sub: 'Manajemen akses pengguna sistem' },
+    help:      { title: 'Panduan', sub: 'Cara menggunakan Dreamland' },
+  }[state.page] || { title: 'Dashboard', sub: '' };
+
   const pt = $('#pageTitle'); if(pt) pt.textContent = meta.title;
   const ps = $('#pageSubtitle'); if(ps) ps.textContent = meta.sub;
   closeSidebar();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
-  if(!state.session) return;
-  const role = state.session.role;
-  
   try {
     switch (state.page) {
-      case 'dashboard': return role === 'admin' ? renderAdminDashboard() : renderUserDashboard();
+      case 'dashboard': 
+        if (state.isLegal) renderLegalDashboard();
+        else if (state.isAdmin) renderAdminDashboard();
+        else renderUserDashboard();
+        break;
       case 'perumahan': return renderPerumahan();
-      case 'pemilik':   return renderPemilik();
+      case 'pemilik':   return state.isLegal ? renderLegalDokumen() : renderPemilik();
       case 'new':       return renderNewRequest();
-      case 'requests':  return role === 'admin' ? renderAdminRequests() : renderUserRequests();
+      case 'requests':  return (state.isAdmin || state.isSuperAdmin) ? renderAdminRequests() : renderUserRequests();
       case 'program':   return renderProgram();
+      case 'users':     return renderKelolaAkun();
       case 'help':      return renderHelp();
-      default:          return role === 'admin' ? renderAdminDashboard() : renderUserDashboard();
     }
   } catch (error) {
     console.error("Render Error:", error);
-    const content = $('#content');
-    if(content) content.innerHTML = `<div class="card card-pad"><div class="empty"><h4>Terjadi Kesalahan Sistem</h4><p>${error.message}</p></div></div>`;
+    $('#content').innerHTML = `<div class="card card-pad"><div class="empty"><h4>Terjadi Kesalahan Sistem</h4><p>${error.message}</p></div></div>`;
   }
 }
 
-/* ---------------- Common Helpers ---------------- */
-function countBy(list) {
+/* ---------------- NOTIFIKASI ---------------- */
+function updateNotifBadge() {
+  const unread = state.notifications.filter(n => !n.isRead).length;
+  const badge = $('#notifBadge');
+  if (badge) {
+    if (unread > 0) {
+      badge.textContent = unread > 9 ? '9+' : unread;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+}
+
+function renderNotifDropdown() {
+  const list = $('#notifList');
+  if (!list) return;
+  if (state.notifications.length === 0) {
+    list.innerHTML = `<div class="empty" style="padding: 30px 20px;"><p class="muted" style="font-size: 13px;">Belum ada notifikasi.</p></div>`;
+    return;
+  }
+  list.innerHTML = state.notifications.map(n => `
+    <div class="notif-item ${n.isRead ? '' : 'unread'}" data-action="open-notif" data-id="${n.id}" data-req="${n.requestId || ''}">
+      <div class="notif-icon">🔔</div>
+      <div class="notif-content">
+        <p>${esc(n.message)}</p>
+        <span class="notif-time">${timeAgo(n.createdAt?.toDate ? n.createdAt.toDate() : n.createdAt)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+$('#notifBtn')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  $('#notifDropdown').classList.toggle('hidden');
+});
+
+document.addEventListener('click', (e) => {
+  const dd = $('#notifDropdown');
+  const btn = $('#notifBtn');
+  if (dd && !dd.classList.contains('hidden') && !dd.contains(e.target) && !btn.contains(e.target)) {
+    dd.classList.add('hidden');
+  }
+});
+
+$('#markAllRead')?.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  const unread = state.notifications.filter(n => !n.isRead);
+  for (const n of unread) {
+    await updateDoc(doc(db, "notifications", n.id), { isRead: true });
+  }
+});
+
+/* ---------------- SHARED HELPERS ---------------- */
+const countBy = (list) => {
   const c = {};
   STATUS_ALL.forEach(s => c[s] = 0);
   list.forEach(r => { if (c[r.status] !== undefined) c[r.status]++; });
   return c;
-}
-const getMyRequests = () => (state.requests || []).filter(r => r.pemilikId === state.session.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-const getAllRequests = () => [...(state.requests || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+};
+const getMyRequests = () => state.requests.filter(r => r.pemilikId === state.session.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+const getAllRequests = () => [...state.requests].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 const getPerumahanName = (id) => (state.perumahan || []).find(p => p.id === id)?.nama || '—';
 
 function statGrid(items) {
   return `<div class="stats">${items.map(i => `
     <div class="stat">
       <div class="icon ${i.cls}">${i.icon}</div>
-      <div>
-        <div class="val">${i.value}</div>
-        <div class="lbl">${i.label}</div>
-      </div>
+      <div><div class="val">${i.value}</div><div class="lbl">${i.label}</div></div>
     </div>`).join('')}</div>`;
 }
+
 function emptyState(icon, title, desc, btnLabel, btnPage) {
   return `<div class="empty">
     <div class="e-icon">${icon}</div>
-    <h4>${esc(title)}</h4>
-    <p>${esc(desc)}</p>
+    <h4>${esc(title)}</h4><p>${esc(desc)}</p>
     ${btnLabel ? `<button class="btn btn-primary" data-action="nav" data-page="${btnPage}">${esc(btnLabel)}</button>` : ''}
   </div>`;
 }
 
+// Upload helper (Return URL)
+async function uploadFile(file, path) {
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, file);
+  return await getDownloadURL(storageRef);
+}
+
 /* =========================================================
-   DASHBOARD
+   DASHBOARD (ADMIN, USER, LEGAL)
    ========================================================= */
 function renderAdminDashboard() {
   const all = getAllRequests();
   const c = countBy(all);
   const total = all.length || 1;
-  const totalPemilik = (state.users || []).filter(u => u.role === 'user').length;
+  const totalPemilik = state.users.filter(u => u.role === ROLE.USER).length;
   
   $('#content').innerHTML = `
     ${statGrid([
       { label: 'Total Perumahan',   value: (state.perumahan || []).length, icon: '🏘️', cls: 'icon-indigo' },
-      { label: 'Total Pembeli',     value: totalPemilik,           icon: '👥', cls: 'icon-blue' },
+      { label: 'Total Pembeli',     value: totalPemilik, icon: '👥', cls: 'icon-blue' },
       { label: 'Pengajuan Aktif',   value: c.pengerjaan + c.pemeriksaan + c.survei, icon: '🔧', cls: 'icon-purple' },
       { label: 'Perlu Verifikasi',  value: c.diajukan + c.verifikasi, icon: '⏳', cls: 'icon-amber' },
     ])}
 
     <div class="grid-2">
       <div class="card card-pad">
-        <div class="card-head">
-          <h3>Pengajuan Menunggu Tindakan</h3>
-          <button class="link" data-action="nav" data-page="requests">Lihat semua</button>
-        </div>
+        <div class="card-head"><h3>Pengajuan Terbaru</h3><button class="link" data-action="nav" data-page="requests">Lihat semua</button></div>
         ${all.filter(r => ['diajukan','verifikasi','survei'].includes(r.status)).length
           ? `<div class="mini-list">${all.filter(r => ['diajukan','verifikasi','survei'].includes(r.status)).slice(0,5).map(miniRow).join('')}</div>`
-          : emptyState('🎉', 'Semua sudah ditangani', 'Tidak ada pengajuan yang menunggu tindakan.', null, null)}
+          : emptyState('🎉', 'Semua sudah ditangani', 'Tidak ada pengajuan baru.', null, null)}
       </div>
-
       <div class="card card-pad">
         <h3 style="margin-bottom:18px">Distribusi Status</h3>
         <div class="bars">
@@ -442,8 +436,6 @@ function renderUserDashboard() {
   const firstName = state.session.nama.split(' ')[0];
   const warranty = getWarrantyStatus(state.session.tanggalSerahTerima);
 
-  $('#pageSubtitle').textContent = `Halo ${firstName}, pantau pengajuan retensi Anda di sini.`;
-
   $('#content').innerHTML = `
     <div class="countdown-widget ${warranty.expired ? 'expired' : ''}">
       <div>
@@ -463,23 +455,33 @@ function renderUserDashboard() {
 
     <div class="grid-2">
       <div class="card card-pad">
-        <div class="card-head">
-          <h3>Pengajuan Terbaru</h3>
-          ${mine.length ? `<button class="link" data-action="nav" data-page="requests">Lihat semua</button>` : ''}
-        </div>
+        <div class="card-head"><h3>Pengajuan Terbaru</h3></div>
         ${mine.length
           ? `<div class="mini-list">${mine.slice(0, 5).map(miniRow).join('')}</div>`
           : emptyState('📭', 'Belum ada pengajuan', 'Ajukan retensi rumah Anda sekarang.', 'Ajukan Retensi', 'new')}
       </div>
-
       <div class="card card-pad">
         <h3 style="margin-bottom:14px">Butuh Retensi?</h3>
-        <p class="muted" style="font-size:13.5px;margin-bottom:18px;line-height:1.65">
-          Ajukan permintaan retensi rumah Anda. Pastikan masa garansi 100 hari belum habis agar tidak dikenakan biaya tambahan.
-        </p>
         <button class="btn btn-primary btn-block" data-action="nav" data-page="new" style="margin-bottom:10px">➕ Ajukan Retensi</button>
         <button class="btn btn-ghost btn-block" data-action="nav" data-page="program">🎁 Info Program Retensi</button>
       </div>
+    </div>
+  `;
+}
+
+function renderLegalDashboard() {
+  const pemilik = state.users.filter(u => u.role === ROLE.USER);
+  const totalDok = pemilik.filter(u => u.dokumen && Object.keys(u.dokumen).length > 0).length;
+  
+  $('#content').innerHTML = `
+    ${statGrid([
+      { label: 'Total Pemilik', value: pemilik.length, icon: '👥', cls: 'icon-indigo' },
+      { label: 'Dokumen Lengkap', value: totalDok, icon: '✅', cls: 'icon-green' },
+    ])}
+    <div class="card card-pad">
+      <h3>Akses Cepat</h3>
+      <p class="muted" style="margin:10px 0;">Gunakan menu <b>Dokumen Hukum</b> di sidebar untuk memverifikasi KTP, SHM, PBB, dan Buku Nikah.</p>
+      <button class="btn btn-primary" data-action="nav" data-page="pemilik">Lihat Dokumen Hukum</button>
     </div>
   `;
 }
@@ -488,262 +490,214 @@ function miniRow(r) {
   return `
     <div class="mini-row" data-action="open-detail" data-id="${r.id}">
       <span class="mini-dot" style="background:${STATUS[r.status]?.color || '#ccc'}"></span>
-      <div class="mini-body">
-        <strong>${esc(r.title)}</strong>
-        <small>${esc(r.category)} · ${timeAgo(r.createdAt)}</small>
-      </div>
+      <div class="mini-body"><strong>${esc(r.title)}</strong><small>${esc(r.category)} · ${timeAgo(r.createdAt?.toDate ? r.createdAt.toDate() : r.createdAt)}</small></div>
       ${statusBadge(r.status)}
     </div>`;
 }
 
 /* =========================================================
-   ADMIN — PERUMAHAN
+   PERUMAHAN (CRUD via Firebase)
    ========================================================= */
-function renderPerumahan() {
+async function renderPerumahan() {
+  $('#content').innerHTML = `<div style="text-align:center; padding:50px;">Memuat data perumahan...</div>`;
+  try {
+    const snap = await getDocs(collection(db, "perumahan"));
+    state.perumahan = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { toast("Gagal memuat perumahan", "error"); }
+
   $('#content').innerHTML = `
     <div class="toolbar">
-      <div class="search-box">
-        <input class="input" id="searchPerumahan" placeholder="Cari nama atau lokasi perumahan...">
-      </div>
+      <div class="search-box"><input class="input" id="searchPerumahan" placeholder="Cari perumahan..."></div>
       <div class="spacer"></div>
       <button class="btn btn-primary btn-sm" data-action="add-perumahan">➕ Tambah Perumahan</button>
     </div>
     <div class="card">
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>ID</th><th>Nama Perumahan</th><th>Lokasi</th>
-              <th>Total Unit</th><th>Pemilik Terdaftar</th><th>Aksi</th>
-            </tr>
-          </thead>
+          <thead><tr><th>ID</th><th>Nama</th><th>Lokasi</th><th>Unit</th><th>Pemilik</th><th>Aksi</th></tr></thead>
           <tbody id="perumahanTbody"></tbody>
         </table>
       </div>
     </div>
   `;
-  const searchEl = $('#searchPerumahan');
-  if (searchEl) searchEl.addEventListener('input', applyFilterPerumahan);
+  $('#searchPerumahan').addEventListener('input', applyFilterPerumahan);
   applyFilterPerumahan();
 }
 
 function applyFilterPerumahan() {
-  try {
-    const q = ($('#searchPerumahan')?.value || '').toLowerCase().trim();
-    const list = (state.perumahan || []).filter(p => !q || String(p.nama || '').toLowerCase().includes(q) || String(p.lokasi || '').toLowerCase().includes(q));
-    const tbody = $('#perumahanTbody');
-    if (!tbody) return;
-    
-    if (!list.length) {
-      tbody.innerHTML = `<tr><td colspan="6"><div class="empty" style="padding:44px 20px"><div class="e-icon">🏘️</div><h4>Tidak ada perumahan</h4><p>Silakan tambah perumahan baru.</p></div></td></tr>`;
-      return;
-    }
-    tbody.innerHTML = list.map(p => {
-      const count = (state.users || []).filter(u => u.role === 'user' && u.perumahanId === p.id).length;
-      return `<tr>
-        <td><span class="mono">${p.id}</span></td>
-        <td><span class="td-title">${esc(p.nama)}</span></td>
-        <td><span class="td-sub" style="font-size:13px;color:#475569">${esc(p.lokasi)}</span></td>
-        <td><strong>${p.totalUnit || 0}</strong> unit</td>
-        <td><strong>${count}</strong> orang</td>
-        <td class="row-actions">
-          <button class="btn btn-primary btn-sm" data-action="view-pemilik-perumahan" data-id="${p.id}">Cek Pemilik</button>
-          <button class="btn btn-ghost btn-sm" data-action="edit-perumahan" data-id="${p.id}">Ubah</button>
-          <button class="btn btn-danger btn-sm" data-action="delete-perumahan" data-id="${p.id}">Hapus</button>
-        </td>
-      </tr>`;
-    }).join('');
-  } catch (err) {
-    console.error("Error render perumahan:", err);
-    const tbody = $('#perumahanTbody');
-    if(tbody) tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Terjadi kesalahan sistem: ${err.message}</div></td></tr>`;
+  const q = ($('#searchPerumahan')?.value || '').toLowerCase().trim();
+  const list = state.perumahan.filter(p => !q || String(p.nama || '').toLowerCase().includes(q));
+  const tbody = $('#perumahanTbody');
+  if (!tbody) return;
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Belum ada data.</div></td></tr>`;
+    return;
   }
+  tbody.innerHTML = list.map(p => {
+    const count = state.users.filter(u => u.role === ROLE.USER && u.perumahanId === p.id).length;
+    return `<tr>
+      <td><span class="mono">${p.id}</span></td>
+      <td><strong>${esc(p.nama)}</strong></td>
+      <td>${esc(p.lokasi)}</td>
+      <td>${p.totalUnit || 0}</td>
+      <td>${count}</td>
+      <td class="row-actions">
+        <button class="btn btn-primary btn-sm" data-action="view-pemilik-perumahan" data-id="${p.id}">Cek Pemilik</button>
+        <button class="btn btn-ghost btn-sm" data-action="edit-perumahan" data-id="${p.id}">Ubah</button>
+        <button class="btn btn-danger btn-sm" data-action="delete-perumahan" data-id="${p.id}">Hapus</button>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 function openPerumahanModal(id) {
   const p = id ? state.perumahan.find(x => x.id === id) : null;
   const isEdit = !!p;
   $('#modalRoot').innerHTML = `
-    <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-backdrop">
       <div class="modal modal-narrow">
-        <div class="modal-head"><div><h3>${isEdit ? 'Ubah Perumahan' : 'Tambah Perumahan'}</h3></div><button class="modal-close" data-action="close-modal">✕</button></div>
+        <div class="modal-head"><h3>${isEdit ? 'Ubah' : 'Tambah'} Perumahan</h3><button class="modal-close" data-action="close-modal">✕</button></div>
         <div class="modal-body">
           <form id="perumahanForm">
             <div class="field"><label>Nama Perumahan *</label><input class="input" id="pNama" required value="${esc(p?.nama || '')}"></div>
             <div class="field"><label>Lokasi *</label><input class="input" id="pLokasi" required value="${esc(p?.lokasi || '')}"></div>
-            <div class="field"><label>Total Unit *</label><input class="input" type="number" min="1" id="pUnit" required value="${p?.totalUnit || ''}"></div>
-            <div class="field"><label>Deskripsi</label><textarea class="input" id="pDesk" rows="3">${esc(p?.deskripsi || '')}</textarea></div>
+            <div class="field"><label>Total Unit *</label><input class="input" type="number" id="pUnit" required value="${p?.totalUnit || ''}"></div>
             <div class="modal-footer">
               <button type="button" class="btn btn-ghost" data-action="close-modal">Batal</button>
-              <button type="submit" class="btn btn-primary">${isEdit ? 'Simpan' : 'Tambah'}</button>
+              <button type="submit" class="btn btn-primary">Simpan</button>
             </div>
           </form>
         </div>
       </div>
     </div>`;
   document.body.style.overflow = 'hidden';
-  $('#perumahanForm').addEventListener('submit', (e) => {
+  $('#perumahanForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const nama = $('#pNama').value.trim();
-    const lokasi = $('#pLokasi').value.trim();
-    const totalUnit = Number($('#pUnit').value);
-    const deskripsi = $('#pDesk').value.trim();
-    if (isEdit) { Object.assign(p, { nama, lokasi, totalUnit, deskripsi }); toast('Diperbarui', 'success'); }
-    else { state.perumahan.push({ id: uid('P'), nama, lokasi, totalUnit, deskripsi }); toast('Ditambahkan', 'success'); }
-    persistAll(); closeModal(); renderPerumahan();
+    const data = {
+      nama: $('#pNama').value.trim(),
+      lokasi: $('#pLokasi').value.trim(),
+      totalUnit: Number($('#pUnit').value),
+    };
+    try {
+      if (isEdit) {
+        await updateDoc(doc(db, "perumahan", p.id), data);
+      } else {
+        await addDoc(collection(db, "perumahan"), data);
+      }
+      toast('Berhasil disimpan', 'success');
+      closeModal(); renderPerumahan();
+    } catch (err) { toast(err.message, 'error'); }
   });
 }
 
-function openPemilikPerumahanModal(perumahanId) {
+async function openPemilikPerumahanModal(perumahanId) {
   const p = state.perumahan.find(x => x.id === perumahanId);
-  if(!p) return;
-  const users = state.users.filter(u => u.role === 'user' && u.perumahanId === perumahanId);
-  
-  const listHtml = users.length ? users.map(u => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">
-      <div>
-        <strong style="display:block;font-size:14px;">${esc(u.nama)}</strong>
-        <span class="muted" style="font-size:12px;">Blok ${esc(u.blok)} · ${esc(u.phone)}</span>
-      </div>
-      <button class="btn btn-ghost btn-sm" data-action="view-documents" data-id="${u.id}">Lihat Dokumen</button>
-    </div>
-  `).join('') : '<p class="muted">Belum ada pemilik terdaftar di perumahan ini.</p>';
-
+  const users = state.users.filter(u => u.role === ROLE.USER && u.perumahanId === perumahanId);
   $('#modalRoot').innerHTML = `
-    <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-backdrop">
       <div class="modal modal-narrow">
-        <div class="modal-head">
-          <div><h3>Daftar Pemilik: ${esc(p.nama)}</h3></div>
-          <button class="modal-close" data-action="close-modal">✕</button>
-        </div>
+        <div class="modal-head"><h3>Pemilik: ${esc(p.nama)}</h3><button class="modal-close" data-action="close-modal">✕</button></div>
         <div class="modal-body">
-          ${listHtml}
+          ${users.length ? users.map(u => `
+            <div style="display:flex;justify-content:space-between;padding:10px;border:1px solid #eee;border-radius:8px;margin-bottom:8px;">
+              <div><strong>${esc(u.nama)}</strong><br><small>Blok ${u.blok}</small></div>
+              <button class="btn btn-ghost btn-sm" data-action="view-documents" data-id="${u.id}">Lihat Dokumen</button>
+            </div>
+          `).join('') : '<p class="muted">Belum ada pemilik.</p>'}
         </div>
       </div>
     </div>`;
   document.body.style.overflow = 'hidden';
-  $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
 }
 
 /* =========================================================
-   ADMIN — DATA PEMBELI & DOKUMEN
+   PEMILIK & DOKUMEN
    ========================================================= */
-const DOC_LABELS = {
-  ktp: 'KTP & NPWP Suami Istri *', bukuNikah: 'Buku Nikah *', skKerja: 'SK Kerja',
-  slipGaji: 'Slip Gaji 3 Bulan', rekKoran: 'Rek Koran 3 Bulan', kk: 'Kartu Keluarga',
-  shm: 'SHM *', imb: 'IMB', pbb: 'PBB *', fotoRumah: 'Foto Rumah'
-};
-const DOC_KEYS = Object.keys(DOC_LABELS);
-const REQUIRED_DOCS = ['ktp', 'bukuNikah', 'shm', 'pbb'];
-
 function renderPemilik() {
   $('#content').innerHTML = `
     <div class="toolbar">
-      <div class="search-box"><input class="input" id="searchPemilik" placeholder="Cari nama, username, blok..."></div>
+      <div class="search-box"><input class="input" id="searchPemilik" placeholder="Cari pemilik..."></div>
       <div class="spacer"></div>
       <button class="btn btn-primary btn-sm" data-action="add-pemilik">➕ Tambah Pembeli</button>
     </div>
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Nama</th><th>Username</th><th>Perumahan</th><th>Blok</th><th>Masa Retensi</th><th>Aksi</th></tr>
-          </thead>
-          <tbody id="pemilikTbody"></tbody>
-        </table>
-      </div>
-    </div>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Nama</th><th>Email</th><th>Blok</th><th>Masa Retensi</th><th>Aksi</th></tr></thead>
+      <tbody id="pemilikTbody"></tbody>
+    </table></div></div>
   `;
-  const searchEl = $('#searchPemilik');
-  if (searchEl) searchEl.addEventListener('input', applyFilterPemilik);
+  $('#searchPemilik').addEventListener('input', applyFilterPemilik);
   applyFilterPemilik();
 }
 
 function applyFilterPemilik() {
-  try {
-    const q = ($('#searchPemilik')?.value || '').toLowerCase().trim();
-    let list = (state.users || []).filter(u => u.role === 'user');
-    if (q) list = list.filter(u => String(u.nama || '').toLowerCase().includes(q) || String(u.username || '').toLowerCase().includes(q) || String(u.blok || '').toLowerCase().includes(q));
-    
-    const tbody = $('#pemilikTbody');
-    if (!tbody) return;
-    
-    if (!list.length) {
-      tbody.innerHTML = `<tr><td colspan="6"><div class="empty" style="padding:44px 20px"><div class="e-icon">👥</div><h4>Tidak ada data pembeli</h4></div></td></tr>`;
-      return;
-    }
+  const q = ($('#searchPemilik')?.value || '').toLowerCase().trim();
+  let list = state.users.filter(u => u.role === ROLE.USER);
+  if (q) list = list.filter(u => String(u.nama || '').toLowerCase().includes(q));
+  
+  const tbody = $('#pemilikTbody');
+  if (!tbody) return;
+  tbody.innerHTML = list.length ? list.map(u => {
+    const w = getWarrantyStatus(u.tanggalSerahTerima);
+    return `<tr>
+      <td><strong>${esc(u.nama)}</strong></td>
+      <td>${esc(u.email || '—')}</td>
+      <td>${esc(u.blok || '—')}</td>
+      <td>${w.expired ? '<span class="status ditolak">Habis</span>' : `<span class="status selesai">${w.daysLeft} Hari</span>`}</td>
+      <td class="row-actions">
+        <button class="btn btn-ghost btn-sm" data-action="view-documents" data-id="${u.id}">Dokumen</button>
+        <button class="btn btn-ghost btn-sm" data-action="edit-pemilik" data-id="${u.id}">Ubah</button>
+      </td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="5"><div class="empty">Belum ada data.</div></td></tr>`;
+}
 
-    tbody.innerHTML = list.map(u => {
-      const warranty = getWarrantyStatus(u.tanggalSerahTerima);
-      return `<tr>
-        <td><span class="td-title">${esc(u.nama)}</span></td>
-        <td><span class="mono">${esc(u.username)}</span></td>
-        <td><span class="td-sub" style="font-size:13px;color:#475569">${esc(getPerumahanName(u.perumahanId))}</span></td>
-        <td><strong>${esc(u.blok || '—')}</strong></td>
-        <td>${warranty.expired ? '<span class="status ditolak">Habis</span>' : `<span class="status selesai">${warranty.daysLeft} Hari</span>`}</td>
-        <td class="row-actions">
-          <button class="btn btn-ghost btn-sm" data-action="view-documents" data-id="${u.id}">Lihat Dokumen</button>
-          <button class="btn btn-ghost btn-sm" data-action="edit-pemilik" data-id="${u.id}">Ubah</button>
-          <button class="btn btn-danger btn-sm" data-action="delete-pemilik" data-id="${u.id}">Hapus</button>
-        </td>
-      </tr>`;
-    }).join('');
-  } catch (err) {
-    console.error("Error render pemilik:", err);
-    const tbody = $('#pemilikTbody');
-    if(tbody) tbody.innerHTML = `<tr><td colspan="6"><div class="empty">Terjadi kesalahan sistem: ${err.message}</div></td></tr>`;
-  }
+function renderLegalDokumen() {
+  const list = state.users.filter(u => u.role === ROLE.USER);
+  $('#content').innerHTML = `
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Nama Pemilik</th><th>KTP</th><th>SHM</th><th>PBB</th><th>Buku Nikah</th></tr></thead>
+      <tbody>
+        ${list.map(u => {
+          const d = u.dokumen || {};
+          const link = (url) => url ? `<a href="${url}" target="_blank" class="btn btn-ghost btn-sm">Lihat</a>` : `<span class="status ditolak">Kosong</span>`;
+          return `<tr>
+            <td><strong>${esc(u.nama)}</strong></td>
+            <td>${link(d.ktp)}</td><td>${link(d.shm)}</td>
+            <td>${link(d.pbb)}</td><td>${link(d.bukuNikah)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div></div>
+  `;
 }
 
 function openPemilikModal(id) {
   const u = id ? state.users.find(x => x.id === id) : null;
   const isEdit = !!u;
-  
   const docFields = DOC_KEYS.map(k => {
-    const isRequired = REQUIRED_DOCS.includes(k);
-    const val = u?.dokumen?.[k] || '';
-    return `
-      <div class="field" style="margin-bottom:10px; grid-column: span 1;">
-        <label>${DOC_LABELS[k]} ${isRequired ? '<span style="color:red">*</span>' : ''}</label>
-        <input class="input" type="file" id="doc_${k}" accept="image/*" ${isRequired && !isEdit ? 'required' : ''} style="padding:8px">
-        ${val ? `<small style="color:green">✓ File tersimpan</small>` : ''}
-      </div>
-    `;
+    const isReq = REQUIRED_DOCS.includes(k);
+    return `<div class="field"><label>${DOC_LABELS[k]} ${isReq ? '*' : ''}</label>
+      <input class="input" type="file" id="doc_${k}" ${isReq && !isEdit ? 'required' : ''}></div>`;
   }).join('');
 
   $('#modalRoot').innerHTML = `
-    <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-backdrop">
       <div class="modal modal-lg">
-        <div class="modal-head">
-          <div><h3>${isEdit ? 'Ubah Data Pembeli' : 'Tambah Pembeli'}</h3><div class="sub">Kelola akun dan dokumen persyaratan retensi</div></div>
-          <button class="modal-close" data-action="close-modal">✕</button>
-        </div>
+        <div class="modal-head"><h3>${isEdit ? 'Ubah' : 'Tambah'} Pemilik</h3><button class="modal-close" data-action="close-modal">✕</button></div>
         <div class="modal-body">
           <form id="pemilikForm">
-            <h4 style="margin-bottom:12px;color:var(--primary)">Data Diri</h4>
             <div class="form-grid">
-              <div class="field"><label>Nama Lengkap *</label><input class="input" id="uNama" required value="${esc(u?.nama || '')}"></div>
-              <div class="field"><label>Username *</label><input class="input" id="uUsername" required value="${esc(u?.username || '')}"></div>
-              <div class="field"><label>Password *</label><input class="input" id="uPassword" required value="${esc(u?.password || '')}"></div>
-              <div class="field"><label>No. WhatsApp *</label><input class="input" id="uPhone" required value="${esc(u?.phone || '')}"></div>
-              <div class="field"><label>Perumahan *</label>
-                <select class="input" id="uPerumahan" required>
-                  <option value="">— Pilih —</option>
-                  ${(state.perumahan || []).map(p => `<option value="${p.id}" ${u?.perumahanId === p.id ? 'selected' : ''}>${esc(p.nama)}</option>`).join('')}
-                </select>
-              </div>
-              <div class="field"><label>Blok / No. Rumah *</label><input class="input" id="uBlok" required value="${esc(u?.blok || '')}"></div>
-              <div class="field full"><label>Tanggal Serah Terima * (Untuk hitung 100 hari retensi)</label><input class="input" type="date" id="uTglSerah" required value="${u?.tanggalSerahTerima ? u.tanggalSerahTerima.split('T')[0] : ''}"></div>
+              <div class="field"><label>Nama *</label><input class="input" id="uNama" required value="${esc(u?.nama || '')}"></div>
+              <div class="field"><label>Email *</label><input class="input" type="email" id="uEmail" required value="${esc(u?.email || '')}" ${isEdit ? 'disabled' : ''}></div>
+              <div class="field"><label>Blok *</label><input class="input" id="uBlok" required value="${esc(u?.blok || '')}"></div>
+              <div class="field"><label>No. HP</label><input class="input" id="uPhone" value="${esc(u?.phone || '')}"></div>
+              <div class="field full"><label>Tanggal Serah Terima *</label><input class="input" type="date" id="uTglSerah" required value="${u?.tanggalSerahTerima ? new Date(u.tanggalSerahTerima).toISOString().split('T')[0] : ''}"></div>
             </div>
-
-            <h4 style="margin:24px 0 12px;color:var(--primary)">Dokumen Persyaratan (Wajib & Opsional)</h4>
-            <div class="form-grid">
-              ${docFields}
-            </div>
-
+            <h4 style="margin:20px 0 10px;">Dokumen</h4>
+            <div class="form-grid">${docFields}</div>
             <div class="modal-footer">
               <button type="button" class="btn btn-ghost" data-action="close-modal">Batal</button>
-              <button type="submit" class="btn btn-primary">${isEdit ? 'Simpan Perubahan' : 'Tambah Pembeli'}</button>
+              <button type="submit" class="btn btn-primary">Simpan</button>
             </div>
           </form>
         </div>
@@ -753,852 +707,316 @@ function openPemilikModal(id) {
 
   $('#pemilikForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const nama = $('#uNama').value.trim();
-    const username = $('#uUsername').value.trim().toLowerCase();
-    const password = $('#uPassword').value;
-    const phone = $('#uPhone').value.trim();
-    const perumahanId = $('#uPerumahan').value;
-    const blok = $('#uBlok').value.trim();
-    const tglSerah = $('#uTglSerah').value;
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.textContent = 'Mengupload...';
+    btn.disabled = true;
 
-    if (!nama || !username || !password || !phone || !perumahanId || !blok || !tglSerah) return toast('Lengkapi field wajib', 'error');
-    if ((state.users || []).some(x => x.username === username && x.id !== u?.id)) return toast('Username sudah dipakai', 'error');
-
-    const dokumenBaru = {};
-    for (const k of DOC_KEYS) {
-      const fileInput = $(`#doc_${k}`);
-      if (fileInput.files.length > 0) {
-        dokumenBaru[k] = await compressImage(fileInput.files[0]);
-      } else if (u?.dokumen?.[k]) {
-        dokumenBaru[k] = u.dokumen[k];
+    try {
+      const dokumenBaru = { ...(u?.dokumen || {}) };
+      for (const k of DOC_KEYS) {
+        const file = $(`#doc_${k}`).files[0];
+        if (file) {
+          dokumenBaru[k] = await uploadFile(file, `dokumen/${Date.now()}_${k}_${file.name}`);
+        }
       }
-    }
+      
+      const data = {
+        nama: $('#uNama').value.trim(),
+        email: $('#uEmail').value.trim(),
+        blok: $('#uBlok').value.trim(),
+        phone: $('#uPhone').value.trim(),
+        tanggalSerahTerima: new Date($('#uTglSerah').value).toISOString(),
+        dokumen: dokumenBaru,
+        role: ROLE.USER
+      };
 
-    if (!isEdit) {
-      for (const reqKey of REQUIRED_DOCS) {
-        if (!dokumenBaru[reqKey]) return toast(`Dokumen ${DOC_LABELS[reqKey]} wajib diunggah!`, 'error');
+      if (isEdit) {
+        await updateDoc(doc(db, "users", u.id), data);
+      } else {
+        // Karena pembuatan akun Auth hanya bisa via Admin SDK, kita sarankan user register sendiri
+        // atau ini hanya menyimpan data profil saja (tidak bisa login)
+        toast('Untuk akun baru, buat di Firebase Auth terlebih dahulu.', 'info');
+        await addDoc(collection(db, "users"), { ...data, createdAt: serverTimestamp() });
       }
+      toast('Berhasil disimpan', 'success');
+      closeModal(); renderPemilik();
+    } catch (err) {
+      toast(err.message, 'error');
+      btn.textContent = 'Simpan'; btn.disabled = false;
     }
-
-    const data = {
-      nama, username, password, phone, perumahanId, blok,
-      tanggalSerahTerima: new Date(tglSerah).toISOString(),
-      dokumen: dokumenBaru
-    };
-
-    if (isEdit) {
-      Object.assign(u, data);
-      toast('Data pembeli diperbarui', 'success');
-    } else {
-      state.users.push({ id: uid('U'), role: 'user', createdAt: new Date().toISOString(), ...data });
-      toast('Pembeli ditambahkan', 'success');
-    }
-    persistAll(); closeModal(); renderPemilik();
   });
 }
 
 function openDocModal(userId) {
   const u = state.users.find(x => x.id === userId);
-  if (!u) return;
-
   const docsHtml = DOC_KEYS.map(k => {
-    const isReq = REQUIRED_DOCS.includes(k);
     const src = u.dokumen?.[k];
-    return `
-      <div class="doc-card">
-        <div class="doc-name">${DOC_LABELS[k].replace(' *', '')}</div>
-        ${src 
-          ? `<img src="${src}" data-action="zoom-src" data-src="${src}" alt="${k}">` 
-          : `<div class="empty-doc">Belum diunggah</div>`}
-        <div class="doc-status">${src ? '✅ Tersedia' : (isReq ? '❌ Wajib' : '⚪ Opsional')}</div>
-      </div>
-    `;
+    return `<div class="doc-card">
+      <div class="doc-name">${DOC_LABELS[k].replace(' *', '')}</div>
+      ${src ? `<img src="${src}" data-action="zoom-src" data-src="${src}">` : `<div class="empty-doc">Kosong</div>`}
+    </div>`;
   }).join('');
-
+  
   $('#modalRoot').innerHTML = `
-    <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-backdrop">
       <div class="modal modal-lg">
-        <div class="modal-head">
-          <div>
-            <h3>Dokumen: ${esc(u.nama)}</h3>
-            <div class="sub">${esc(getPerumahanName(u.perumahanId))} · Blok ${esc(u.blok)} · Tgl Serah Terima: ${fmtDate(u.tanggalSerahTerima)}</div>
-          </div>
-          <button class="modal-close" data-action="close-modal">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="doc-grid">${docsHtml}</div>
-        </div>
+        <div class="modal-head"><h3>Dokumen: ${esc(u.nama)}</h3><button class="modal-close" data-action="close-modal">✕</button></div>
+        <div class="modal-body"><div class="doc-grid">${docsHtml}</div></div>
       </div>
     </div>`;
   document.body.style.overflow = 'hidden';
-  $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
 }
 
 /* =========================================================
-   USER — FORM PENGAJUAN RETENSI
+   KELOLA AKUN (SUPER ADMIN)
+   ========================================================= */
+function renderKelolaAkun() {
+  $('#content').innerHTML = `
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Aksi</th></tr></thead>
+      <tbody>
+        ${state.users.map(u => `
+          <tr>
+            <td><strong>${esc(u.nama)}</strong></td>
+            <td>${esc(u.email)}</td>
+            <td><span class="status ${u.role === 'superadmin' ? 'ditolak' : (u.role === 'admin' ? 'pengerjaan' : 'selesai')}">${u.role.toUpperCase()}</span></td>
+            <td>${u.id !== state.session.id ? `<button class="btn btn-danger btn-sm" data-action="delete-user" data-id="${u.id}">Hapus Akses</button>` : '<em>(Anda)</em>'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div></div>
+  `;
+}
+
+/* =========================================================
+   PENGAJUAN (USER & ADMIN)
    ========================================================= */
 function renderNewRequest() {
   state.draftPhotos = [];
-  const myPerumahan = getPerumahanName(state.session.perumahanId);
-  const warranty = getWarrantyStatus(state.session.tanggalSerahTerima);
-
   $('#content').innerHTML = `
-    <div style="max-width:860px">
+    <div style="max-width:800px">
       <div class="card card-pad">
-        <div class="card-head">
-          <h3>Formulir Pengajuan Retensi</h3>
-          ${warranty.expired ? '<span class="status ditolak">Masa Garansi Habis</span>' : '<span class="status selesai">Dalam Masa Garansi</span>'}
-        </div>
-        
-        ${warranty.expired ? `
-          <div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:16px;border-radius:10px;margin-bottom:20px;font-size:13.5px;">
-            <strong>Perhatian:</strong> Masa garansi retensi 100 hari Anda telah berakhir. Pengajuan ini akan dikenakan biaya tambahan yang akan diverifikasi oleh Admin.
+        <h3>Formulir Pengajuan Retensi</h3>
+        <form id="requestForm" style="margin-top:20px;">
+          <div class="field"><label>Judul *</label><input class="input" id="fTitle" required></div>
+          <div class="field"><label>Kategori *</label>
+            <select class="input" id="fCategory" required>
+              ${CATEGORIES.map(c => `<option>${c}</option>`).join('')}
+            </select>
           </div>
-        ` : ''}
-
-        <div class="info-item" style="margin-bottom:20px">
-          <div class="k">Diajukan untuk rumah</div>
-          <div class="v">${esc(myPerumahan)} — Blok ${esc(state.session.blok || '—')}</div>
-        </div>
-
-        <form id="requestForm">
-          <div class="form-grid">
-            <div class="field full">
-              <label for="fTitle">Judul Pengajuan *</label>
-              <input class="input" id="fTitle" required maxlength="90" placeholder="Contoh: Retensi atap bocor di kamar utama">
-            </div>
-            <div class="field">
-              <label for="fCategory">Kategori Pekerjaan *</label>
-              <select class="input" id="fCategory" required>
-                <option value="">— Pilih kategori —</option>
-                ${CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field">
-              <label for="fPriority">Tingkat Prioritas *</label>
-              <select class="input" id="fPriority" required>
-                ${PRIORITIES.map(p => `<option value="${p}" ${p === 'Sedang' ? 'selected' : ''}>${p}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field full">
-              <label for="fDesc">Deskripsi Kebutuhan *</label>
-              <textarea class="input" id="fDesc" required rows="5" placeholder="Jelaskan kondisi kerusakan atau rencana retensi..."></textarea>
-            </div>
-            <div class="field full">
-              <label>Foto Kondisi Rumah (Awal)</label>
-              <div class="dropzone" id="dropzone">
-                <div class="dz-icon">📷</div><strong>Klik atau tarik foto ke sini</strong><small>Maks. 5 foto</small>
-              </div>
-              <input type="file" id="photoInput" accept="image/*" multiple hidden>
-              <div class="photo-grid" id="photoGrid"></div>
-            </div>
-          </div>
-          <div style="display:flex;gap:10px;margin-top:24px;">
-            <button type="submit" class="btn btn-primary">Kirim Pengajuan</button>
-            <button type="button" class="btn btn-ghost" data-action="nav" data-page="dashboard">Batal</button>
-          </div>
+          <div class="field"><label>Deskripsi *</label><textarea class="input" id="fDesc" required></textarea></div>
+          <div class="field"><label>Foto</label><input class="input" type="file" id="fPhotos" multiple accept="image/*"></div>
+          <button type="submit" class="btn btn-primary">Kirim Pengajuan</button>
         </form>
       </div>
     </div>
   `;
+  $('#requestForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    btn.textContent = 'Mengirim...'; btn.disabled = true;
 
-  const fileInput = $('#photoInput'), dz = $('#dropzone');
-  if(dz) {
-    dz.addEventListener('click', () => fileInput.click());
-    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
-    dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
-    dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); handleFiles(e.dataTransfer.files); });
-    fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value = ''; });
-  }
-  const form = $('#requestForm');
-  if(form) form.addEventListener('submit', submitRequest);
-}
+    try {
+      const photos = [];
+      const files = $('#fPhotos').files;
+      for (let i = 0; i < files.length; i++) {
+        photos.push(await uploadFile(files[i], `requests/${Date.now()}_${i}`));
+      }
 
-async function handleFiles(files) {
-  const list = Array.from(files).filter(f => f.type.startsWith('image/'));
-  const remaining = 5 - state.draftPhotos.length;
-  if (remaining <= 0) return toast('Maksimal 5 foto', 'error');
-  for (const file of list.slice(0, remaining)) {
-    state.draftPhotos.push(await compressImage(file));
-  }
-  renderDraftPhotos();
-}
+      await addDoc(collection(db, "requests"), {
+        pemilikId: state.session.id,
+        ownerName: state.session.nama,
+        perumahanNama: state.session.perumahanNama || '—',
+        blok: state.session.blok || '—',
+        title: $('#fTitle').value,
+        category: $('#fCategory').value,
+        description: $('#fDesc').value,
+        photos,
+        status: 'diajukan',
+        assignedTo: '',
+        estimatedCost: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        timeline: [{ status: 'diajukan', note: 'Pengajuan dibuat.', by: state.session.nama, role: 'user', at: new Date().toISOString(), photos: [] }]
+      });
 
-function renderDraftPhotos() {
-  const grid = $('#photoGrid');
-  if (!grid) return;
-  grid.innerHTML = state.draftPhotos.map((src, i) => `
-    <div class="photo-item">
-      <img src="${src}" data-action="zoom-src" data-src="${src}">
-      <button type="button" class="photo-del" data-action="del-photo" data-index="${i}">✕</button>
-    </div>`).join('');
-}
+      await addDoc(collection(db, "notifications"), {
+        userId: 'admin',
+        message: `Pengajuan baru dari ${state.session.nama}`,
+        requestId: 'NEW',
+        isRead: false,
+        createdAt: serverTimestamp()
+      });
 
-function compressImage(file, maxSize = 1000, quality = 0.7) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > height && width > maxSize) { height = Math.round(height * maxSize / width); width = maxSize; }
-        else if (height >= width && height > maxSize) { width = Math.round(width * maxSize / height); height = maxSize; }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = reject; img.src = e.target.result;
-    };
-    reader.onerror = reject; reader.readAsDataURL(file);
+      toast('Pengajuan terkirim!', 'success');
+      goTo('requests');
+    } catch (err) { toast(err.message, 'error'); btn.textContent = 'Kirim'; btn.disabled = false; }
   });
 }
 
-function submitRequest(e) {
-  e.preventDefault();
-  const title = $('#fTitle').value.trim();
-  const category = $('#fCategory').value;
-  const priority = $('#fPriority').value;
-  const description = $('#fDesc').value.trim();
-  if (!title || !category || !description) return toast('Lengkapi field wajib', 'error');
-
-  const now = new Date().toISOString();
-  const req = {
-    id: uid(), pemilikId: state.session.id, ownerName: state.session.nama,
-    perumahanId: state.session.perumahanId, perumahanNama: getPerumahanName(state.session.perumahanId),
-    blok: state.session.blok, phone: state.session.phone,
-    title, category, priority, description,
-    photos: [...state.draftPhotos], status: 'diajukan', assignedTo: '', estimatedCost: 0,
-    createdAt: now, updatedAt: now,
-    timeline: [{ status: 'diajukan', note: 'Pengajuan retensi dibuat.', by: state.session.nama, role: 'user', at: now, photos: [] }],
-  };
-  
-  state.requests.push(req); 
-  
-  // Notifikasi ke Admin
-  addNotification('admin', `Pengajuan retensi baru dari ${state.session.nama} (${title})`, req.id);
-
-  persistAll(); 
-  state.draftPhotos = [];
-  toast('Pengajuan berhasil dikirim!', 'success');
-  goTo('requests');
-  setTimeout(() => openDetail(req.id), 320);
+function renderAdminRequests() {
+  $('#content').innerHTML = `
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>Pemilik</th><th>Judul</th><th>Status</th><th>Aksi</th></tr></thead>
+      <tbody>
+        ${state.requests.map(r => `
+          <tr>
+            <td><span class="mono">#${r.id.slice(0,6)}</span></td>
+            <td>${esc(r.ownerName)}</td>
+            <td>${esc(r.title)}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td><button class="btn btn-ghost btn-sm" data-action="open-detail" data-id="${r.id}">Kelola</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div></div>
+  `;
 }
 
-/* =========================================================
-   USER — DAFTAR PENGAJUAN
-   ========================================================= */
 function renderUserRequests() {
   const mine = getMyRequests();
   $('#content').innerHTML = `
-    <div class="toolbar">
-      <div class="chips" id="userChips">
-        ${['all', ...STATUS_ALL].map(s => `
-          <button class="chip ${s === 'all' ? 'active' : ''}" data-action="filter-user" data-status="${s}">
-            ${s === 'all' ? 'Semua' : STATUS[s].short}
-          </button>`).join('')}
-      </div>
-      <div class="spacer"></div>
-      <button class="btn btn-primary btn-sm" data-action="nav" data-page="new">➕ Pengajuan Baru</button>
-    </div>
-    <div id="userList"></div>
-  `;
-  renderUserList(mine, 'all');
-}
-
-function renderUserList(list, filter) {
-  const box = $('#userList');
-  if(!box) return;
-  const filtered = filter === 'all' ? list : list.filter(r => r.status === filter);
-  if (!filtered.length) {
-    box.innerHTML = `<div class="card">${emptyState('🗂️', 'Tidak ada pengajuan', 'Belum ada data.', 'Ajukan Retensi', 'new')}</div>`;
-    return;
-  }
-  box.innerHTML = `<div class="req-list">${filtered.map(reqCard).join('')}</div>`;
-}
-
-function reqCard(r) {
-  const thumb = r.photos && r.photos.length ? `<img src="${r.photos[0]}">` : '🛠️';
-  return `
-    <div class="req-card" data-action="open-detail" data-id="${r.id}">
-      <div class="req-thumb">${thumb}</div>
-      <div class="req-body">
-        <div class="req-top">${statusBadge(r.status)}<span class="mono">#${r.id}</span></div>
-        <h4>${esc(r.title)}</h4>
-        <p class="req-desc">${esc(r.description)}</p>
-        <div class="req-meta">
-          <span>🏘️ ${esc(r.perumahanNama)}</span>
-          <span>📅 ${fmtDate(r.createdAt)}</span>
+    <div class="req-list">
+      ${mine.map(r => `
+        <div class="req-card" data-action="open-detail" data-id="${r.id}">
+          <div class="req-thumb">🛠️</div>
+          <div class="req-body">
+            <h4>${esc(r.title)}</h4>
+            <div class="req-meta">${statusBadge(r.status)}</div>
+          </div>
         </div>
-      </div>
-      <div class="req-arrow">›</div>
-    </div>`;
-}
-
-/* =========================================================
-   ADMIN — SEMUA PENGAJUAN
-   ========================================================= */
-function renderAdminRequests() {
-  $('#content').innerHTML = `
-    <div class="toolbar">
-      <div class="search-box"><input class="input" id="searchReq" placeholder="Cari judul, ID, nama..."></div>
-      <select class="input" id="filterReqStatus" style="max-width:200px">
-        <option value="all">Semua Status</option>
-        ${STATUS_ALL.map(s => `<option value="${s}">${STATUS[s].label}</option>`).join('')}
-      </select>
-      <div class="spacer"></div>
-      <span class="muted" style="font-size:13px" id="resultCount"></span>
-    </div>
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>Pemilik</th><th>Pengajuan</th><th>Status</th><th>Pekerja</th><th>Biaya</th><th>Aksi</th></tr></thead>
-          <tbody id="reqTableBody"></tbody>
-        </table>
-      </div>
+      `).join('')}
     </div>
   `;
-  const searchEl = $('#searchReq');
-  const filterEl = $('#filterReqStatus');
-  if (searchEl) searchEl.addEventListener('input', applyAdminFilters);
-  if (filterEl) filterEl.addEventListener('change', applyAdminFilters);
-  applyAdminFilters();
 }
 
-function applyAdminFilters() {
-  try {
-    const q = ($('#searchReq')?.value || '').toLowerCase().trim();
-    const st = $('#filterReqStatus')?.value || 'all';
-    let list = getAllRequests();
-    if (st !== 'all') list = list.filter(r => r.status === st);
-    if (q) list = list.filter(r => String(r.title||'').toLowerCase().includes(q) || String(r.id||'').toLowerCase().includes(q) || String(r.ownerName||'').toLowerCase().includes(q));
-    
-    const body = $('#reqTableBody');
-    if (!body) return;
-    
-    body.innerHTML = list.length ? list.map(r => `
-      <tr>
-        <td><span class="mono">#${r.id}</span></td>
-        <td><span class="td-title" style="max-width:140px">${esc(r.ownerName)}</span><span class="td-sub">${esc(r.perumahanNama)}</span></td>
-        <td><span class="td-title">${esc(r.title)}</span></td>
-        <td>${statusBadge(r.status)}</td>
-        <td><span class="td-sub">${esc(r.assignedTo || '—')}</span></td>
-        <td><span class="td-sub">${r.estimatedCost ? rupiah(r.estimatedCost) : '—'}</span></td>
-        <td class="row-actions"><button class="btn btn-ghost btn-sm" data-action="open-detail" data-id="${r.id}">Kelola</button></td>
-      </tr>`).join('') : `<tr><td colspan="7"><div class="empty">Tidak ada data.</div></td></tr>`;
-    
-    if ($('#resultCount')) $('#resultCount').textContent = `${list.length} pengajuan`;
-  } catch (err) {
-    console.error("Error render requests:", err);
-    const body = $('#reqTableBody');
-    if(body) body.innerHTML = `<tr><td colspan="7"><div class="empty">Error: ${err.message}</div></td></tr>`;
-  }
-}
-
-/* =========================================================
-   DETAIL MODAL
-   ========================================================= */
-function openDetail(id) {
+async function openDetail(id) {
   const r = state.requests.find(x => x.id === id);
   if (!r) return;
-  const isAdmin = state.session.role === 'admin';
-  const pemilikData = state.users.find(u => u.id === r.pemilikId);
-  const warranty = getWarrantyStatus(pemilikData?.tanggalSerahTerima);
-
-  const timelineHtml = (r.timeline || []).map(t => `
+  
+  const timelineHtml = r.timeline.map(t => `
     <div class="tl-item">
-      <span class="tl-dot" style="border-color:${STATUS[t.status]?.color || '#6366f1'}"></span>
-      <div class="tl-head"><strong>${esc(STATUS[t.status]?.label || t.status)}</strong><span class="tl-time">${fmtDateTime(t.at)}</span></div>
-      <div class="tl-note">${esc(t.note)}</div>
-      <div class="tl-by">oleh ${esc(t.by)} · ${t.role === 'admin' ? 'Admin' : 'Pemilik'}</div>
+      <span class="tl-dot"></span>
+      <strong>${t.status}</strong> - ${t.note}<br>
+      <small>${fmtDateTime(t.at)}</small>
       ${t.photos && t.photos.length ? `<div class="tl-photos">${t.photos.map(p => `<img src="${p}" data-action="zoom-src" data-src="${p}">`).join('')}</div>` : ''}
-    </div>`).join('');
+    </div>
+  `).join('');
 
-  const adminPanel = isAdmin ? `
-    <div class="side-box" style="margin-bottom:16px">
-      <h4>⚙️ Kelola Pengajuan</h4>
+  const adminPanel = (state.isAdmin || state.isSuperAdmin) ? `
+    <div class="side-box">
+      <h4>Kelola Pengajuan</h4>
       <div class="field">
-        <label for="mStatus">Tahapan Retensi</label>
+        <label>Status</label>
         <select class="input" id="mStatus">
           ${STATUS_ALL.map(s => `<option value="${s}" ${s === r.status ? 'selected' : ''}>${STATUS[s].label}</option>`).join('')}
         </select>
       </div>
-      <div class="field">
-        <label for="mWorker">Pekerja / Developer</label>
-        <input class="input" id="mWorker" value="${esc(r.assignedTo || '')}" placeholder="Nama vendor">
-      </div>
-      <div class="field">
-        <label for="mCost">Biaya Tambahan (Rp)</label>
-        <input class="input" type="number" id="mCost" min="0" value="${r.estimatedCost || 0}">
-        <div class="hint">Isi 0 jika masih dalam masa garansi 100 hari.</div>
-      </div>
-      <div class="field">
-        <label for="mNote">Catatan Progres *</label>
-        <textarea class="input" id="mNote" rows="2" placeholder="Update terkini..."></textarea>
-      </div>
-      <div class="field">
-        <label for="mPhoto">Foto Dokumentasi Progres (Opsional)</label>
-        <input class="input" type="file" id="mPhoto" accept="image/*" style="padding:8px">
-      </div>
+      <div class="field"><label>Catatan Progres</label><textarea class="input" id="mNote"></textarea></div>
+      <div class="field"><label>Foto Dokumentasi</label><input class="input" type="file" id="mPhoto" accept="image/*"></div>
       <button class="btn btn-primary btn-block" data-action="save-request" data-id="${r.id}">Simpan Perubahan</button>
-    </div>
-  ` : `
-    <div class="side-box" style="margin-bottom:16px">
-      <h4>💬 Tambah Catatan</h4>
-      <div class="field"><textarea class="input" id="userNote" rows="3" placeholder="Tulis pertanyaan..."></textarea></div>
-      <button class="btn btn-primary btn-block" data-action="add-note" data-id="${r.id}">Kirim Catatan</button>
-    </div>
-  `;
-
-  const userVerifyPanel = (!isAdmin && r.status === 'verifikasi') ? `
-    <div class="side-box" style="margin-bottom:16px; border:2px solid var(--warning); background:#fffbeb;">
-      <h4>⚠️ Persetujuan Retensi</h4>
-      <p style="font-size:13px; margin-bottom:12px; line-height:1.6;">
-        ${warranty.expired 
-          ? `Masa garansi 100 hari telah habis. Pengerjaan ini akan dikenakan biaya tambahan sebesar <strong>${rupiah(r.estimatedCost)}</strong>. Apakah Anda setuju untuk melanjutkan?`
-          : `Masa garansi masih aktif. Apakah Anda setuju untuk melanjutkan proses retensi ini?`}
-      </p>
-      <div style="display:flex; gap:8px;">
-        <button class="btn btn-success btn-block" data-action="user-verify" data-id="${r.id}" data-val="ya">Ya, Setuju</button>
-        <button class="btn btn-danger btn-block" data-action="user-verify" data-id="${r.id}" data-val="tidak">Tidak</button>
-      </div>
     </div>
   ` : '';
 
   $('#modalRoot').innerHTML = `
-    <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-backdrop">
       <div class="modal modal-lg">
-        <div class="modal-head">
-          <div>
-            <h3>${esc(r.title)}</h3>
-            <div class="sub">
-              <span class="mono">#${r.id}</span>
-              <span>${esc(r.ownerName)} · ${esc(r.perumahanNama)} · ${esc(r.blok)}</span>
-            </div>
-          </div>
-          <button class="modal-close" data-action="close-modal">✕</button>
-        </div>
+        <div class="modal-head"><h3>${esc(r.title)}</h3><button class="modal-close" data-action="close-modal">✕</button></div>
         <div class="modal-body">
           <div class="detail-grid">
             <div>
-              <div style="margin-bottom:18px; display:flex; gap:10px; align-items:center;">
-                ${statusBadge(r.status)}
-                ${warranty.expired ? '<span class="status ditolak">Masa Garansi Habis</span>' : `<span class="status selesai">Sisa ${warranty.daysLeft} Hari</span>`}
-              </div>
-              
-              <div class="info-grid">
-                <div class="info-item"><div class="k">Kategori</div><div class="v">${esc(r.category)}</div></div>
-                <div class="info-item"><div class="k">Prioritas</div><div class="v">${esc(r.priority)}</div></div>
-                <div class="info-item"><div class="k">Pekerja</div><div class="v">${esc(r.assignedTo || '—')}</div></div>
-                <div class="info-item"><div class="k">Biaya Tambahan</div><div class="v">${r.estimatedCost ? rupiah(r.estimatedCost) : 'Gratis (Garansi)'}</div></div>
-              </div>
-              
-              <h4 style="margin:20px 0 10px">Deskripsi</h4>
-              <div class="desc-box">${esc(r.description)}</div>
-              
-              <h4 style="margin:24px 0 14px">Riwayat Progres</h4>
+              <div style="margin-bottom:20px;">${statusBadge(r.status)}</div>
+              <h4>Deskripsi</h4><p>${esc(r.description)}</p>
+              <h4 style="margin-top:20px;">Timeline</h4>
               <div class="timeline">${timelineHtml}</div>
             </div>
-            
-            <aside>
-              ${userVerifyPanel}
-              ${adminPanel}
-            </aside>
+            <aside>${adminPanel}</aside>
           </div>
         </div>
       </div>
     </div>`;
   document.body.style.overflow = 'hidden';
-  $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
-}
-
-function closeModal() { 
-  const root = $('#modalRoot'); if(root) root.innerHTML = ''; 
-  document.body.style.overflow = ''; 
 }
 
 async function saveRequestChanges(id) {
   const r = state.requests.find(x => x.id === id);
-  if (!r) return;
-  
   const newStatus = $('#mStatus').value;
-  const worker = $('#mWorker').value.trim();
-  const cost = Number($('#mCost').value || 0);
-  const note = $('#mNote').value.trim();
-  const photoInput = $('#mPhoto');
+  const note = $('#mNote').value;
+  const photoFile = $('#mPhoto').files[0];
   
-  if (!note) return toast('Catatan progres wajib diisi', 'error');
+  if (!note) return toast('Catatan wajib diisi', 'error');
 
-  let newPhoto = null;
-  if (photoInput && photoInput.files.length > 0) {
-    newPhoto = await compressImage(photoInput.files[0]);
-  }
+  let photoUrl = null;
+  if (photoFile) photoUrl = await uploadFile(photoFile, `progress/${Date.now()}`);
 
-  const notes = [];
-  let changed = false;
-  const statusChanged = newStatus !== r.status;
+  const newTimeline = [...r.timeline, {
+    status: newStatus, note, by: state.session.nama, role: 'admin',
+    at: new Date().toISOString(), photos: photoUrl ? [photoUrl] : []
+  }];
 
-  if (statusChanged) {
-    r.status = newStatus;
-    notes.push(`Status diubah ke "${STATUS[newStatus].label}".`);
-    changed = true;
-  }
-  if (worker !== (r.assignedTo || '')) {
-    r.assignedTo = worker;
-    notes.push(worker ? `Pekerja: ${worker}.` : 'Pekerja dikosongkan.');
-    changed = true;
-  }
-  if (cost !== (r.estimatedCost || 0)) {
-    r.estimatedCost = cost;
-    notes.push(`Biaya diperbarui: ${rupiah(cost)}.`);
-    changed = true;
-  }
-  if (note) { notes.push(note); changed = true; }
-
-  if (!changed) return toast('Tidak ada perubahan', 'error');
-
-  r.updatedAt = new Date().toISOString();
-  r.timeline.push({ 
-    status: r.status, 
-    note: notes.join(' '), 
-    by: state.session.nama, 
-    role: 'admin', 
-    at: r.updatedAt,
-    photos: newPhoto ? [newPhoto] : [] 
+  await updateDoc(doc(db, "requests", id), {
+    status: newStatus, timeline: newTimeline, updatedAt: serverTimestamp()
   });
 
-  // Notifikasi ke User jika status berubah
-  if (statusChanged) {
-    addNotification(r.pemilikId, `Progres pengajuan "${r.title}" diperbarui menjadi: ${STATUS[newStatus].label}`, r.id);
+  if (newStatus !== r.status) {
+    await addDoc(collection(db, "notifications"), {
+      userId: r.pemilikId,
+      message: `Pengajuan "${r.title}" diupdate ke: ${STATUS[newStatus].label}`,
+      requestId: id, isRead: false, createdAt: serverTimestamp()
+    });
   }
   
-  persistAll();
-  closeModal();
-  renderPage();
-  toast('Perubahan disimpan', 'success');
+  closeModal(); toast('Disimpan', 'success');
 }
-
-function userVerifyRequest(id, val) {
-  const r = state.requests.find(x => x.id === id);
-  if (!r) return;
-  const now = new Date().toISOString();
-  
-  if (val === 'ya') {
-    r.status = 'survei';
-    r.timeline.push({ status: 'survei', note: 'Pemilik menyetujui kelanjutan retensi.', by: state.session.nama, role: 'user', at: now, photos: [] });
-    toast('Persetujuan diterima. Lanjut ke survei.', 'success');
-    addNotification('admin', `${state.session.nama} MENYETUJUI retensi untuk "${r.title}"`, r.id);
-  } else {
-    r.status = 'ditolak';
-    r.timeline.push({ status: 'ditolak', note: 'Pemilik menolak retensi (tidak setuju dengan ketentuan/biaya).', by: state.session.nama, role: 'user', at: now, photos: [] });
-    toast('Pengajuan dibatalkan.', 'info');
-    addNotification('admin', `${state.session.nama} MENOLAK retensi untuk "${r.title}"`, r.id);
-  }
-  r.updatedAt = now;
-  persistAll();
-  closeModal();
-  renderPage();
-}
-
-function addUserNote(id) {
-  const r = state.requests.find(x => x.id === id);
-  if (!r) return;
-  const note = ($('#userNote')?.value || '').trim();
-  if (!note) return toast('Tulis catatan dulu', 'error');
-  r.updatedAt = new Date().toISOString();
-  r.timeline.push({ status: r.status, note, by: state.session.nama, role: 'user', at: r.updatedAt, photos: [] });
-  
-  addNotification('admin', `Catatan baru dari ${state.session.nama} pada pengajuan "${r.title}"`, r.id);
-
-  persistAll();
-  openDetail(id);
-  toast('Catatan terkirim', 'success');
-}
-
-/* =========================================================
-   USER — PROGRAM RETENSI
-   ========================================================= */
-function renderProgram() {
-  $('#content').innerHTML = `
-    <div class="program-hero">
-      <h2>🛡️ Program Garansi Retensi 100 Hari</h2>
-      <p>Setiap pembelian rumah di Dreamland mendapatkan layanan retensi (perbaikan garansi) gratis selama 100 hari sejak tanggal serah terima kunci.</p>
-    </div>
-
-    <div class="grid-2-even">
-      <div class="card card-pad">
-        <h3 style="margin-bottom:16px">Ketentuan Retensi</h3>
-        <div class="term-list" style="grid-template-columns:1fr">
-          <div class="term-item">
-            <h4>1. Masa Berlaku (100 Hari)</h4>
-            <p>Dihitung otomatis sejak <strong>Tanggal Serah Terima</strong>. Anda dapat melihat hitung mundur (countdown) sisa waktu di halaman Dashboard.</p>
-          </div>
-          <div class="term-item">
-            <h4>2. Bebas Biaya (Gratis)</h4>
-            <p>Selama masa 100 hari aktif, perbaikan atas kerusakan yang disebabkan cacat produksi sepenuhnya gratis.</p>
-          </div>
-          <div class="term-item">
-            <h4>3. Lewat Masa Berlaku</h4>
-            <p>Jika pengajuan dilakukan setelah 100 hari, pengajuan tetap dilayani namun akan <strong>dikenakan biaya tambahan</strong> sesuai kerusakan. Admin akan menginformasikan estimasi biaya sebelum pengerjaan.</p>
-          </div>
-          <div class="term-item">
-            <h4>4. Persetujuan Pemilik</h4>
-            <p>Jika masa garansi habis dan dikenakan biaya, pemilik rumah memiliki hak untuk menyetujui (Ya) atau membatalkan (Tidak) pengajuan.</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="card card-pad">
-        <h3 style="margin-bottom:16px">Tahapan Proses</h3>
-        ${STATUS_FLOW.map((s, i) => `
-          <div style="display:flex;gap:14px;align-items:center;padding:12px 0;${i < STATUS_FLOW.length - 1 ? 'border-bottom:1px solid #f1f5f9' : ''}">
-            <div style="width:32px;height:32px;border-radius:10px;background:${STATUS[s].bg};color:${STATUS[s].color};display:grid;place-items:center;font-weight:800;font-size:13px;flex-shrink:0">${i + 1}</div>
-            <div style="flex:1">
-              <div style="font-size:13.5px;font-weight:700">${STATUS[s].label}</div>
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>
-
-    <div class="card card-pad" style="margin-top:20px;text-align:center">
-      <h3 style="margin-bottom:8px">Siap mengajukan retensi?</h3>
-      <button class="btn btn-primary" data-action="nav" data-page="new">➕ Ajukan Retensi Sekarang</button>
-    </div>
-  `;
-}
-
-/* =========================================================
-   PANDUAN
-   ========================================================= */
-function renderHelp() {
-  const isAdmin = state.session.role === 'admin';
-  const steps = isAdmin ? [
-    ['Kelola Perumahan', 'Tambahkan perumahan yang dikelola.'],
-    ['Input Data Pembeli', 'Masukkan data diri, tanggal serah terima, dan unggah dokumen wajib (KTP, Buku Nikah, SHM, PBB).'],
-    ['Verifikasi & Cek Biaya', 'Saat pengajuan masuk, cek apakah masa 100 hari sudah habis. Jika ya, isi biaya tambahan.'],
-    ['Update Progres', 'Perbarui status, unggah foto dokumentasi pengerjaan di setiap tahap.'],
-  ] : [
-    ['Cek Masa Garansi', 'Lihat widget countdown di Dashboard Anda.'],
-    ['Ajukan Retensi', 'Isi form jika ada kerusakan.'],
-    ['Persetujuan', 'Jika masa garansi habis dan ada biaya, Anda akan diminta klik "Ya" atau "Tidak" pada detail pengajuan.'],
-    ['Pantau Progres', 'Lihat update dan foto dokumentasi dari admin.'],
-  ];
-
-  $('#content').innerHTML = `
-    <div class="grid-2">
-      <div class="card card-pad">
-        <h3 style="margin-bottom:6px">Alur Penggunaan</h3>
-        ${steps.map((s, i) => `
-          <div class="step">
-            <div class="step-num">${i + 1}</div>
-            <div><h4>${s[0]}</h4><p>${s[1]}</p></div>
-          </div>`).join('')}
-      </div>
-      <div class="card card-pad">
-        <h3 style="margin-bottom:14px">Arti Tahapan</h3>
-        ${STATUS_ALL.map(s => `
-          <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;">
-            <span class="mini-dot" style="background:${STATUS[s].color};margin-top:7px"></span>
-            <div>
-              <div style="font-size:13.5px;font-weight:600">${STATUS[s].label}</div>
-              <div class="muted" style="font-size:12.5px">${
-                s === 'diajukan' ? 'Pengajuan baru dikirim.' :
-                s === 'verifikasi' ? 'Admin memeriksa kelayakan & biaya (pemilik diminta persetujuan).' :
-                s === 'survei' ? 'Pengecekan lokasi fisik.' :
-                s === 'pengerjaan' ? 'Perbaikan sedang dilakukan.' :
-                s === 'pemeriksaan' ? 'Pengecekan akhir.' :
-                s === 'selesai' ? 'Selesai.' : 'Ditolak/dibatalkan.'
-              }</div>
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>
-  `;
-}
-
-/* =========================================================
-   SIDEBAR (mobile) & LIGHTBOX
-   ========================================================= */
-function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarBackdrop')?.classList.add('show'); }
-function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarBackdrop')?.classList.remove('show'); }
-
-function closeLightbox() { 
-  const lb = $('#lightbox'); if(lb) lb.classList.add('hidden'); 
-  const img = $('#lightboxImg'); if(img) img.src = ''; 
-}
-$('#lightbox')?.addEventListener('click', closeLightbox);
 
 /* =========================================================
    EVENT DELEGATION
    ========================================================= */
-document.addEventListener('click', (e) => {
+document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
   const action = el.dataset.action;
 
   switch (action) {
     case 'nav': goTo(el.dataset.page); break;
-    case 'logout': logout(); break;
-    case 'open-detail': openDetail(el.dataset.id); break;
     case 'close-modal': closeModal(); break;
-    case 'save-request': saveRequestChanges(el.dataset.id); break;
-    case 'add-note': addUserNote(el.dataset.id); break;
-    case 'user-verify': userVerifyRequest(el.dataset.id, el.dataset.val); break;
-
     case 'add-perumahan': openPerumahanModal(null); break;
     case 'edit-perumahan': openPerumahanModal(el.dataset.id); break;
-    case 'delete-perumahan': {
-      const p = state.perumahan.find(x => x.id === el.dataset.id);
-      if (state.users.some(u => u.perumahanId === el.dataset.id) || state.requests.some(r => r.perumahanId === el.dataset.id)) return toast('Masih ada data terkait', 'error');
-      if (!confirm(`Hapus perumahan "${p.nama}"?`)) return;
-      state.perumahan = state.perumahan.filter(x => x.id !== el.dataset.id);
-      persistAll(); renderPerumahan(); toast('Dihapus', 'success'); break;
-    }
     case 'view-pemilik-perumahan': openPemilikPerumahanModal(el.dataset.id); break;
-
     case 'add-pemilik': openPemilikModal(null); break;
     case 'edit-pemilik': openPemilikModal(el.dataset.id); break;
     case 'view-documents': openDocModal(el.dataset.id); break;
-    case 'delete-pemilik': {
-      if (state.requests.some(r => r.pemilikId === el.dataset.id)) return toast('Pemilik punya riwayat pengajuan', 'error');
-      if (!confirm('Hapus akun ini?')) return;
-      state.users = state.users.filter(x => x.id !== el.dataset.id);
-      persistAll(); renderPemilik(); toast('Dihapus', 'success'); break;
-    }
-
-    case 'del-photo': state.draftPhotos.splice(Number(el.dataset.index), 1); renderDraftPhotos(); break;
-    case 'filter-user': {
-      $$('#userChips .chip').forEach(c => c.classList.toggle('active', c.dataset.status === el.dataset.status));
-      renderUserList(getMyRequests(), el.dataset.status); break;
-    }
+    case 'open-detail': openDetail(el.dataset.id); break;
+    case 'save-request': saveRequestChanges(el.dataset.id); break;
     
-    case 'zoom-src': {
-      const lbImg = $('#lightboxImg');
-      const lb = $('#lightbox');
-      if(lbImg && lb) {
-        lbImg.src = el.dataset.src;
-        lb.classList.remove('hidden');
+    case 'delete-perumahan':
+      if (confirm("Hapus perumahan ini?")) {
+        await deleteDoc(doc(db, "perumahan", el.dataset.id));
+        renderPerumahan(); toast('Dihapus');
       }
       break;
-    }
+    
+    case 'delete-user':
+      if (confirm("Hapus akses user ini? (Akun Auth harus dihapus manual dari Console)")) {
+        await deleteDoc(doc(db, "users", el.dataset.id));
+        toast('Akses dicabut');
+      }
+      break;
 
-    case 'open-notif': {
-      markNotifAsRead(el.dataset.id);
-      $('#notifDropdown').classList.add('hidden');
-      if (el.dataset.req) openDetail(el.dataset.req);
+    case 'zoom-src': {
+      $('#lightboxImg').src = el.dataset.src;
+      $('#lightbox').classList.remove('hidden');
       break;
     }
   }
 });
 
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    if (!$('#lightbox')?.classList.contains('hidden')) closeLightbox();
-    else if ($('#modalRoot')?.innerHTML) closeModal();
-    else if (!$('#notifDropdown')?.classList.contains('hidden')) $('#notifDropdown').classList.add('hidden');
-    else closeSidebar();
-  }
-});
-
-$('#menuToggle')?.addEventListener('click', openSidebar);
-$('#sidebarBackdrop')?.addEventListener('click', closeSidebar);
-
-/* ---------------- Login & Notif Toggle ---------------- */
-$('#fillDemo')?.addEventListener('click', () => {
-  $('#loginUsername').value = 'admin';
-  $('#loginPassword').value = 'admin123';
-  toast('Akun admin terisi', 'info');
-});
-
-$('#loginForm')?.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const username = $('#loginUsername').value.trim().toLowerCase();
-  const password = $('#loginPassword').value;
-  const user = (state.users || []).find(u => u.username === username && u.password === password);
-  if (!user) return toast('Username atau password salah.', 'error');
-
-  state.session = { ...user };
-  store.set(K_SESSION, state.session);
-  $('#loginPassword').value = '';
-  toast(`Selamat datang, ${user.nama.split(' ')[0]}!`, 'success');
-  enterApp();
-});
-
-// Toggle Dropdown Notifikasi
-$('#notifBtn')?.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const dd = $('#notifDropdown');
-  if (dd) dd.classList.toggle('hidden');
-  renderNotifDropdown();
-});
-
-// Tutup dropdown jika klik di luar
-document.addEventListener('click', (e) => {
-  const dd = $('#notifDropdown');
-  const btn = $('#notifBtn');
-  if (dd && !dd.classList.contains('hidden') && !dd.contains(e.target) && !btn.contains(e.target)) {
-    dd.classList.add('hidden');
-  }
-});
-
-// Tandai semua dibaca
-$('#markAllRead')?.addEventListener('click', (e) => {
-  e.stopPropagation();
-  if (!state.session) return;
-  const userId = state.session.role === 'admin' ? 'admin' : state.session.id;
-  state.notifications.forEach(n => { if (n.userId === userId) n.isRead = true; });
-  persistAll();
-  updateNotifBadge();
-  renderNotifDropdown();
-});
+function closeModal() { $('#modalRoot').innerHTML = ''; document.body.style.overflow = ''; }
+$('#lightbox')?.addEventListener('click', () => $('#lightbox').classList.add('hidden'));
 
 /* =========================================================
-   INIT & REAL-TIME POLLING (SIMULASI)
+   INIT
    ========================================================= */
-function init() {
-  let perumahan = store.get(K_PERUMAHAN, null);
-  if (!Array.isArray(perumahan) || perumahan.length === 0) { perumahan = seedPerumahan(); store.set(K_PERUMAHAN, perumahan); }
-  state.perumahan = perumahan;
-
-  let users = store.get(K_USERS, null);
-  if (!Array.isArray(users) || users.length === 0) { users = seedUsers(); store.set(K_USERS, users); }
-  state.users = users;
-
-  let reqs = store.get(K_REQ, null);
-  if (!Array.isArray(reqs) || reqs.length === 0) { reqs = seedRequests(); store.set(K_REQ, reqs); }
-  state.requests = reqs;
-
-  let notifs = store.get(K_NOTIF, null);
-  if (!Array.isArray(notifs)) { notifs = []; }
-  state.notifications = notifs;
-
-  const session = store.get(K_SESSION, null);
-  if (session && session.role) {
-    state.session = session;
-    enterApp();
-  } else {
-    showLogin();
-  }
-}
-
-// SIMULASI REAL-TIME POLLING UNTUK ADMIN
-setInterval(() => {
-  if (state.session && state.session.role === 'admin') {
-    const localReqs = store.get(K_REQ, []);
-    if (localReqs.length > state.requests.length) {
-      const newReq = localReqs[localReqs.length - 1];
-      state.requests = localReqs;
-      
-      // Sinkronisasi notifikasi jika ada dari tab lain
-      const localNotifs = store.get(K_NOTIF, []);
-      state.notifications = localNotifs;
-      
-      updateNotifBadge();
-      toast(`🔔 Pengajuan baru dari ${newReq.ownerName}!`, 'info');
-      
-      if (state.page === 'requests' || state.page === 'dashboard') renderPage();
-    }
-  }
-}, 5000);
-
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialization sudah ditangani oleh onAuthStateChanged
+});
