@@ -1,6 +1,6 @@
 /* =========================================================
    Dreamland — Property Management CRM
-   FIREBASE EDITION (Super Admin Kelola Pemilik Rumah)
+   FIREBASE EDITION (Role-Based Access Control Complete)
    ========================================================= */
 
 if (!window.FirebaseApp) {
@@ -176,10 +176,8 @@ $('#loginForm')?.addEventListener('submit', async (e) => {
   if (errDiv) errDiv.style.display = 'none';
 
   try {
-    // 1. Coba Login sebagai Admin/Legal/Superadmin (Firebase Auth)
     await signInWithEmailAndPassword(auth, email, pass);
   } catch (err) {
-    // 2. Jika gagal, coba cari di Firestore (Login Pemilik Rumah)
     try {
       const q = query(collection(db, "users"), where("email", "==", email), where("password", "==", pass), where("role", "==", ROLE.USER));
       const snap = await getDocs(q);
@@ -257,6 +255,7 @@ function renderNav() {
       { id: 'perumahan', label: 'Perumahan', icon: '🏘️' },
       { id: 'pemilik', label: 'Data Pembeli', icon: '👥' },
       { id: 'requests', label: 'Pengajuan Retensi', icon: '📋' },
+      { id: 'users', label: 'Kelola Akun', icon: '🔐' },
       { id: 'help', label: 'Panduan', icon: '💡' },
     ];
   } else if (state.isAdmin) {
@@ -317,6 +316,7 @@ function renderPage() {
     requests:  { title: 'Pengajuan Retensi', sub: 'Pantau seluruh pengajuan' },
     new:       { title: 'Ajukan Retensi', sub: 'Lengkapi formulir pengajuan' },
     program:   { title: 'Program Retensi', sub: 'Informasi garansi retensi 100 hari' },
+    users:     { title: 'Kelola Akun', sub: 'Manajemen akses pengguna sistem' },
     help:      { title: 'Panduan', sub: 'Cara menggunakan Dreamland' },
   }[state.page] || { title: 'Dashboard', sub: '' };
 
@@ -337,6 +337,7 @@ function renderPage() {
       case 'new':       return renderNewRequest();
       case 'requests':  return (state.isAdmin || state.isSuperAdmin) ? renderAdminRequests() : renderUserRequests();
       case 'program':   return renderProgram();
+      case 'users':     return renderKelolaAkun();
       case 'help':      return renderHelp();
     }
   } catch (error) {
@@ -768,7 +769,7 @@ function openPemilikModal(id) {
       const data = {
         nama: $('#uNama').value.trim(),
         email: $('#uEmail').value.trim(),
-        password: $('#uPassword').value, // Disimpan di Firestore
+        password: $('#uPassword').value,
         blok: $('#uBlok').value.trim(),
         phone: $('#uPhone').value.trim(),
         tanggalSerahTerima: new Date($('#uTglSerah').value).toISOString(),
@@ -779,7 +780,6 @@ function openPemilikModal(id) {
       if (isEdit) {
         await updateDoc(doc(db, "users", u.id), data);
       } else {
-        // Cek duplikasi email
         const isExist = await getDocs(query(collection(db, "users"), where("email", "==", data.email)));
         if(!isExist.empty) throw new Error("Email sudah terdaftar.");
         
@@ -812,6 +812,31 @@ function openDocModal(userId) {
       </div>
     </div>`;
   document.body.style.overflow = 'hidden';
+}
+
+/* ---------------- KELOLA AKUN (SUPER ADMIN) ---------------- */
+function renderKelolaAkun() {
+  // Ekstra proteksi
+  if (!state.isSuperAdmin) {
+    $('#content').innerHTML = `<div class="card card-pad"><div class="empty"><h4>Akses Ditolak</h4></div></div>`;
+    return;
+  }
+
+  $('#content').innerHTML = `
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Aksi</th></tr></thead>
+      <tbody>
+        ${state.users.map(u => `
+          <tr>
+            <td><strong>${esc(u.nama)}</strong></td>
+            <td>${esc(u.email)}</td>
+            <td><span class="status ${u.role === 'superadmin' ? 'ditolak' : (u.role === 'admin' ? 'pengerjaan' : 'selesai')}">${u.role.toUpperCase()}</span></td>
+            <td>${u.id !== state.session.id ? `<button class="btn btn-danger btn-sm" data-action="delete-user" data-id="${u.id}">Hapus Akses</button>` : '<em>(Anda)</em>'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div></div>
+  `;
 }
 
 /* ---------------- PENGAJUAN ---------------- */
@@ -1061,6 +1086,13 @@ document.addEventListener('click', async (e) => {
         } catch (err) {
           toast(err.message, 'error');
         }
+      }
+      break;
+
+    case 'delete-user':
+      if (confirm("Hapus akses user ini? (Akun Auth harus dihapus manual dari Console)")) {
+        await deleteDoc(doc(db, "users", el.dataset.id));
+        toast('Akses dicabut');
       }
       break;
 
