@@ -38,37 +38,32 @@
       <div class="lv-foot">© 2025 Dreamland — infodreamland.my.id</div>
     </div>
 
-    <!-- Sisi Kanan: Form Login -->
+    <!-- Sisi Kanan: Form Login Firebase -->
     <div class="login-panel">
       <div class="login-card">
         <h2>Selamat datang 👋</h2>
-        <p class="muted">Masuk untuk melanjutkan ke dashboard Anda.</p>
+        <p class="muted">Masuk menggunakan Email terdaftar Anda.</p>
 
-        <form id="loginForm" autocomplete="off" novalidate>
+        <form id="loginForm" autocomplete="off">
           <div class="field">
-            <label for="loginUsername">Username</label>
-            <input class="input" type="text" id="loginUsername" placeholder="Masukkan username" autocomplete="username" required>
+            <label for="loginEmail">Email</label>
+            <input class="input" type="email" id="loginEmail" placeholder="contoh: admin@dreamland.com" required>
           </div>
           <div class="field">
             <label for="loginPassword">Password</label>
-            <input class="input" type="password" id="loginPassword" placeholder="••••••" autocomplete="current-password" required>
+            <input class="input" type="password" id="loginPassword" placeholder="••••••" required>
           </div>
-          <button class="btn btn-primary btn-block" type="submit">Masuk</button>
+          <button class="btn btn-primary btn-block" type="submit" id="btnLogin">Masuk</button>
         </form>
 
-        <div class="demo-box">
-          <div class="demo-title">Akun Demo</div>
-          <div class="demo-row">
-            <span>Admin / Pengelola</span>
-            <code>admin / admin123</code>
-          </div>
-          <div class="demo-row">
-            <span>Pemilik Rumah</span>
-            <code>budi / 123456</code>
-          </div>
-          <button type="button" class="btn btn-ghost btn-block" id="fillDemo" style="margin-top: 10px;">
-            Isi Otomatis (Admin)
-          </button>
+        <!-- Area Pesan Error -->
+        <div id="loginError" style="color: var(--danger); font-size: 13px; margin-top: 12px; display: none; text-align: center; font-weight: 500;"></div>
+
+        <div class="demo-box" style="margin-top: 20px;">
+          <div class="demo-title">Informasi Sistem</div>
+          <p class="muted" style="font-size: 12px; line-height: 1.5;">
+            Sistem terintegrasi dengan Firebase Google. Pastikan akun Anda sudah didaftarkan oleh Super Admin atau melalui Firebase Console.
+          </p>
         </div>
       </div>
     </div>
@@ -90,13 +85,13 @@
         </div>
       </div>
       
-      <!-- Menu Navigasi Dinamis -->
+      <!-- Menu Navigasi Dinamis (Dirender via JS berdasarkan Role) -->
       <nav class="nav" id="navList"></nav>
       
       <!-- Profil User & Tombol Logout -->
       <div class="sidebar-foot">
         <div class="user-chip" id="userChip"></div>
-        <button class="btn btn-ghost btn-block" data-action="logout">Keluar</button>
+        <button class="btn btn-ghost btn-block" id="btnLogout">Keluar</button>
       </div>
     </aside>
 
@@ -114,14 +109,14 @@
         <!-- Area Kanan Topbar (Notifikasi & Role) -->
         <div class="topbar-right">
           
-          <!-- [NEW] Tombol Lonceng Notifikasi -->
+          <!-- Tombol Lonceng Notifikasi -->
           <div style="position: relative;">
             <button class="btn btn-ghost btn-sm" id="notifBtn" style="padding: 8px 12px; border-radius: 50%; position: relative; background: #fff;">
               🔔
               <span id="notifBadge" class="notif-badge hidden">0</span>
             </button>
             
-            <!-- [NEW] Dropdown Notifikasi -->
+            <!-- Dropdown Notifikasi -->
             <div id="notifDropdown" class="notif-dropdown hidden">
               <div class="notif-header">
                 <strong>Notifikasi</strong>
@@ -133,7 +128,7 @@
             </div>
           </div>
           
-          <!-- Badge Role (Admin / Pemilik) -->
+          <!-- Badge Role (Superadmin / Admin / Legal / Pemilik) -->
           <span class="role-badge" id="roleBadge"></span>
           
         </div>
@@ -144,7 +139,7 @@
     </div>
   </div>
 
-  <!-- ==================== ELEMEN GLOBAL (Modal, Lightbox, Toast) ==================== -->
+  <!-- ==================== ELEMEN GLOBAL ==================== -->
   
   <!-- Root untuk Modal (Pop-up Form/Detail) -->
   <div id="modalRoot"></div>
@@ -157,7 +152,52 @@
   <!-- Container untuk Notifikasi Toast -->
   <div class="toast-wrap" id="toastWrap"></div>
 
-  <!-- Script Utama -->
-  <script src="app.js"></script>
+  <!-- ==================== FIREBASE SDK & APP LOGIC ==================== -->
+  <script type="module">
+    // =========================================================
+    // 1. KONFIGURASI FIREBASE (GANTI DENGAN MILIK ANDA!)
+    // =========================================================
+    // Dapatkan config ini dari Firebase Console > Project Settings > General > Your apps (Web)
+    const firebaseConfig = {
+      apiKey: "AIzaSy...",
+      authDomain: "dreamland-app.firebaseapp.com",
+      projectId: "dreamland-app",
+      storageBucket: "dreamland-app.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcdef"
+    };
+
+    // =========================================================
+    // 2. IMPORT MODUL FIREBASE (v10 Modular SDK via CDN)
+    // =========================================================
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+
+    // =========================================================
+    // 3. INISIALISASI FIREBASE
+    // =========================================================
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const storage = getStorage(app);
+
+    // Ekspos fungsi Firebase ke window agar file app.js bisa mengaksesnya
+    window.FirebaseApp = {
+      auth, db, storage,
+      fb: {
+        signInWithEmailAndPassword, signOut, onAuthStateChanged,
+        collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp, addDoc,
+        ref, uploadBytes, getDownloadURL
+      }
+    };
+
+    // Muat script app.js setelah Firebase siap
+    const script = document.createElement('script');
+    script.src = 'app.js';
+    script.type = 'module';
+    document.body.appendChild(script);
+  </script>
 </body>
 </html>
