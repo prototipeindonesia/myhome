@@ -1,6 +1,6 @@
 /* =========================================================
    Dreamland — Property Management CRM
-   FIREBASE EDITION (Role-Based Access Control Complete)
+   FIREBASE EDITION + CLOUDINARY STORAGE
    ========================================================= */
 
 if (!window.FirebaseApp) {
@@ -9,13 +9,16 @@ if (!window.FirebaseApp) {
   throw new Error("FirebaseApp is not defined");
 }
 
-const { auth, db, storage, fb } = window.FirebaseApp;
+const { auth, db, fb } = window.FirebaseApp;
 const { 
   signInWithEmailAndPassword, signOut, onAuthStateChanged, 
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, 
-  query, where, orderBy, onSnapshot, serverTimestamp, addDoc,
-  ref, uploadBytes, getDownloadURL 
+  query, where, orderBy, onSnapshot, serverTimestamp, addDoc 
 } = fb;
+
+/* ---------------- KONFIGURASI CLOUDINARY ---------------- */
+const CLOUDINARY_CLOUD_NAME = "virp6kkh";
+const CLOUDINARY_UPLOAD_PRESET = "dreamland_docs";
 
 /* ---------------- Konstanta ---------------- */
 const STATUS = {
@@ -127,7 +130,32 @@ function toast(msg, type = 'info') {
   }, 3200);
 }
 
-/* ---------------- AUTH (DUAL LOGIN) ---------------- */
+/* ---------------- CLOUDINARY UPLOAD ---------------- */
+async function uploadFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+  try {
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error?.message || 'Gagal upload ke Cloudinary');
+    }
+
+    const data = await response.json();
+    return data.secure_url; // URL publik yang aman
+  } catch (err) {
+    console.error('Cloudinary upload error:', err);
+    throw new Error('Gagal upload file. Pastikan koneksi internet stabil.');
+  }
+}
+
+/* ---------------- AUTH ---------------- */
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     try {
@@ -432,12 +460,6 @@ function emptyState(icon, title, desc, btnLabel, btnPage) {
     <h4>${esc(title)}</h4><p>${esc(desc)}</p>
     ${btnLabel ? `<button class="btn btn-primary" data-action="nav" data-page="${btnPage}">${esc(btnLabel)}</button>` : ''}
   </div>`;
-}
-
-async function uploadFile(file, path) {
-  const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, file);
-  return await getDownloadURL(storageRef);
 }
 
 /* ---------------- DASHBOARD ---------------- */
@@ -762,7 +784,7 @@ function openPemilikModal(id) {
       for (const k of DOC_KEYS) {
         const file = $(`#doc_${k}`).files[0];
         if (file) {
-          dokumenBaru[k] = await uploadFile(file, `dokumen/${Date.now()}_${k}_${file.name}`);
+          dokumenBaru[k] = await uploadFile(file);
         }
       }
       
@@ -816,7 +838,6 @@ function openDocModal(userId) {
 
 /* ---------------- KELOLA AKUN (SUPER ADMIN) ---------------- */
 function renderKelolaAkun() {
-  // Ekstra proteksi
   if (!state.isSuperAdmin) {
     $('#content').innerHTML = `<div class="card card-pad"><div class="empty"><h4>Akses Ditolak</h4></div></div>`;
     return;
@@ -868,7 +889,7 @@ function renderNewRequest() {
       const photos = [];
       const files = $('#fPhotos').files;
       for (let i = 0; i < files.length; i++) {
-        photos.push(await uploadFile(files[i], `requests/${Date.now()}_${i}`));
+        photos.push(await uploadFile(files[i]));
       }
 
       await addDoc(collection(db, "requests"), {
@@ -995,7 +1016,7 @@ async function saveRequestChanges(id) {
   if (!note) return toast('Catatan wajib diisi', 'error');
 
   let photoUrl = null;
-  if (photoFile) photoUrl = await uploadFile(photoFile, `progress/${Date.now()}`);
+  if (photoFile) photoUrl = await uploadFile(photoFile);
 
   const newTimeline = [...(r.timeline || []), {
     status: newStatus, note, by: state.session.nama, role: 'admin',
