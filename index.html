@@ -57,12 +57,12 @@
         </form>
 
         <!-- Area Pesan Error -->
-        <div id="loginError" style="color: var(--danger); font-size: 13px; margin-top: 12px; display: none; text-align: center; font-weight: 500;"></div>
+        <div id="loginError" style="color: var(--danger); font-size: 13px; margin-top: 12px; display: none; text-align: center; font-weight: 500; background: #fee2e2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca;"></div>
 
         <div class="demo-box" style="margin-top: 20px;">
           <div class="demo-title">Informasi Sistem</div>
           <p class="muted" style="font-size: 12px; line-height: 1.5;">
-            Sistem terintegrasi dengan Firebase Google. Pastikan akun Anda sudah didaftarkan oleh Super Admin atau melalui Firebase Console.
+            Sistem terintegrasi dengan Firebase Google. Pastikan akun Anda sudah didaftarkan di Firebase Authentication dan memiliki data profil di Firestore (collection <code>users</code>).
           </p>
         </div>
       </div>
@@ -155,9 +155,8 @@
   <!-- ==================== FIREBASE SDK & APP LOGIC ==================== -->
   <script type="module">
     // =========================================================
-    // 1. KONFIGURASI FIREBASE (GANTI DENGAN MILIK ANDA!)
+    // 1. KONFIGURASI FIREBASE
     // =========================================================
-    // Dapatkan config ini dari Firebase Console > Project Settings > General > Your apps (Web)
     const firebaseConfig = {
       apiKey: "AIzaSyBc3GNZ3PBRQbqPGZmV_01rU6RZEVSo36Q",
       authDomain: "info-dreamland.firebaseapp.com",
@@ -183,7 +182,7 @@
     const db = getFirestore(app);
     const storage = getStorage(app);
 
-    // Ekspos fungsi Firebase ke window agar file app.js bisa mengaksesnya
+    // Ekspos instance dan fungsi ke window
     window.FirebaseApp = {
       auth, db, storage,
       fb: {
@@ -193,10 +192,16 @@
       }
     };
 
-    // Muat script app.js setelah Firebase siap
+    // Muat app.js secara manual setelah window.FirebaseApp siap
     const script = document.createElement('script');
-    script.src = 'app.js';
     script.type = 'module';
+    script.textContent = `
+      // Trik: import app.js setelah Firebase siap
+      import('./app.js').catch(err => {
+        console.error("Gagal memuat app.js:", err);
+        alert("Gagal memuat modul aplikasi. Cek Console untuk detail.");
+      });
+    `;
     document.body.appendChild(script);
   </script>
 </body>
