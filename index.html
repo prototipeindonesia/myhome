@@ -47,7 +47,7 @@
         <form id="loginForm" autocomplete="off">
           <div class="field">
             <label for="loginEmail">Email</label>
-            <input class="input" type="email" id="loginEmail" placeholder="contoh: admin@dreamland.com" required>
+            <input class="input" type="text" id="loginEmail" placeholder="contoh: admin@dreamland.com" required>
           </div>
           <div class="field">
             <label for="loginPassword">Password</label>
@@ -62,7 +62,7 @@
         <div class="demo-box" style="margin-top: 20px;">
           <div class="demo-title">Informasi Sistem</div>
           <p class="muted" style="font-size: 12px; line-height: 1.5;">
-            Sistem terintegrasi dengan Firebase Google. Pastikan akun Anda sudah didaftarkan di Firebase Authentication dan memiliki data profil di Firestore (collection <code>users</code>).
+            Sistem terintegrasi dengan Firebase Google. Pastikan akun Anda sudah didaftarkan di Firebase Authentication (untuk Admin) atau di Firestore (untuk Pemilik Rumah).
           </p>
         </div>
       </div>
@@ -155,7 +155,7 @@
   <!-- ==================== FIREBASE SDK & APP LOGIC ==================== -->
   <script type="module">
     // =========================================================
-    // 1. KONFIGURASI FIREBASE
+    // 1. KONFIGURASI FIREBASE (Jangan diubah kecuali project baru)
     // =========================================================
     const firebaseConfig = {
       apiKey: "AIzaSyBc3GNZ3PBRQbqPGZmV_01rU6RZEVSo36Q",
