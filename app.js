@@ -240,9 +240,35 @@ $('#loginForm')?.addEventListener('submit', async (e) => {
   }
 });
 
-$('#btnLogout')?.addEventListener('click', () => {
-  signOut(auth);
-  toast('Anda telah keluar', 'info');
+$('#btnLogout')?.addEventListener('click', async () => {
+  // Jika user login via Firebase Auth (Admin/Staf)
+  if (auth.currentUser) {
+    try {
+      await signOut(auth);
+      toast('Anda telah keluar', 'info');
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+  } 
+  // Jika user login via Firestore (Pemilik Rumah)
+  else {
+    // Reset state session
+    state.session = null;
+    state.isSuperAdmin = false;
+    state.isAdmin = false;
+    state.isLegal = false;
+
+    // Hentikan listener realtime
+    if(unsubRequests) { unsubRequests(); unsubRequests = null; }
+    if(unsubUsers) { unsubUsers(); unsubUsers = null; }
+    if(unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
+
+    // Sembunyikan app, tampilkan login
+    $('#loginScreen').classList.remove('hidden');
+    $('#app').classList.add('hidden');
+    
+    toast('Anda telah keluar', 'info');
+  }
 });
 
 /* ---------------- REALTIME LISTENERS ---------------- */
