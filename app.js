@@ -1,6 +1,6 @@
 /* =========================================================
    Dreamland — Property Management CRM
-   FIREBASE EDITION + CLOUDINARY STORAGE
+   FIREBASE + CLOUDINARY + LEGAL FEATURES
    ========================================================= */
 
 if (!window.FirebaseApp) {
@@ -148,7 +148,7 @@ async function uploadFile(file) {
     }
 
     const data = await response.json();
-    return data.secure_url; // URL publik yang aman
+    return data.secure_url;
   } catch (err) {
     console.error('Cloudinary upload error:', err);
     throw new Error('Gagal upload file. Pastikan koneksi internet stabil.');
@@ -241,32 +241,19 @@ $('#loginForm')?.addEventListener('submit', async (e) => {
 });
 
 $('#btnLogout')?.addEventListener('click', async () => {
-  // Jika user login via Firebase Auth (Admin/Staf)
   if (auth.currentUser) {
     try {
       await signOut(auth);
       toast('Anda telah keluar', 'info');
-    } catch (err) {
-      console.error('Logout error:', err);
-    }
-  } 
-  // Jika user login via Firestore (Pemilik Rumah)
-  else {
-    // Reset state session
+    } catch (err) { console.error(err); }
+  } else {
     state.session = null;
-    state.isSuperAdmin = false;
-    state.isAdmin = false;
-    state.isLegal = false;
-
-    // Hentikan listener realtime
+    state.isSuperAdmin = false; state.isAdmin = false; state.isLegal = false;
     if(unsubRequests) { unsubRequests(); unsubRequests = null; }
     if(unsubUsers) { unsubUsers(); unsubUsers = null; }
     if(unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
-
-    // Sembunyikan app, tampilkan login
     $('#loginScreen').classList.remove('hidden');
     $('#app').classList.add('hidden');
-    
     toast('Anda telah keluar', 'info');
   }
 });
@@ -713,13 +700,14 @@ function renderPemilik() {
       <button class="btn btn-primary btn-sm" data-action="add-pemilik">➕ Tambah Pembeli</button>
     </div>
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Nama</th><th>Perumahan</th><th>Email</th><th>Blok</th><th>Masa Retensi</th><th>Aksi</th></tr></thead>
+      <thead><tr><th>Nama</th><th>Email</th><th>Blok</th><th>Masa Retensi</th><th>Aksi</th></tr></thead>
       <tbody id="pemilikTbody"></tbody>
     </table></div></div>
   `;
   $('#searchPemilik').addEventListener('input', applyFilterPemilik);
   applyFilterPemilik();
 }
+
 function applyFilterPemilik() {
   const q = ($('#searchPemilik')?.value || '').toLowerCase().trim();
   let list = state.users.filter(u => u.role === ROLE.USER);
@@ -727,15 +715,10 @@ function applyFilterPemilik() {
   
   const tbody = $('#pemilikTbody');
   if (!tbody) return;
-  
-  // Ubah header tabel (tambahkan <th>Perumahan</th>)
-  // (Bisa juga langsung diubah di HTML renderPemilik)
-
   tbody.innerHTML = list.length ? list.map(u => {
     const w = getWarrantyStatus(u.tanggalSerahTerima);
     return `<tr>
       <td><strong>${esc(u.nama)}</strong></td>
-      <td>${esc(u.perumahanNama || '—')}</td>
       <td>${esc(u.email || '—')}</td>
       <td>${esc(u.blok || '—')}</td>
       <td>${w.expired ? '<span class="status ditolak">Habis</span>' : `<span class="status selesai">${w.daysLeft} Hari</span>`}</td>
@@ -745,21 +728,43 @@ function applyFilterPemilik() {
         <button class="btn btn-danger btn-sm" data-action="delete-pemilik" data-id="${u.id}">Hapus</button>
       </td>
     </tr>`;
-  }).join('') : `<tr><td colspan="6"><div class="empty">Belum ada data.</div></td></tr>`;
+  }).join('') : `<tr><td colspan="5"><div class="empty">Belum ada data.</div></td></tr>`;
 }
-function renderLegalDokumen() {
+
+async function renderLegalDokumen() {
   const list = state.users.filter(u => u.role === ROLE.USER);
   $('#content').innerHTML = `
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Nama Pemilik</th><th>KTP</th><th>SHM</th><th>PBB</th><th>Buku Nikah</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Nama Pemilik</th>
+          <th>KTP</th>
+          <th>SHM</th>
+          <th>PBB</th>
+          <th>Buku Nikah</th>
+          <th>Aksi Legal</th>
+        </tr>
+      </thead>
       <tbody>
         ${list.map(u => {
           const d = u.dokumen || {};
-          const link = (url) => url ? `<a href="${url}" target="_blank" class="btn btn-ghost btn-sm">Lihat</a>` : `<span class="status ditolak">Kosong</span>`;
+          const st = u.statusDokumen || {};
+          const renderStatus = (key, url) => {
+            if (!url) return `<span class="status ditolak">Kosong</span>`;
+            if (st[key] === 'valid') return `<span class="status selesai">✓ Valid</span>`;
+            if (st[key] === 'revisi') return `<span class="status ditolak">✕ Revisi</span>`;
+            return `<span class="status verifikasi">⏳ Pending</span>`;
+          };
           return `<tr>
             <td><strong>${esc(u.nama)}</strong></td>
-            <td>${link(d.ktp)}</td><td>${link(d.shm)}</td>
-            <td>${link(d.pbb)}</td><td>${link(d.bukuNikah)}</td>
+            <td>${renderStatus('ktp', d.ktp)}</td>
+            <td>${renderStatus('shm', d.shm)}</td>
+            <td>${renderStatus('pbb', d.pbb)}</td>
+            <td>${renderStatus('bukuNikah', d.bukuNikah)}</td>
+            <td>
+              <button class="btn btn-primary btn-sm" data-action="legal-doc" data-id="${u.id}">Verifikasi</button>
+              <button class="btn btn-ghost btn-sm" data-action="print-legal" data-id="${u.id}">Cetak</button>
+            </td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -767,18 +772,9 @@ function renderLegalDokumen() {
   `;
 }
 
-async function openPemilikModal(id) {
+function openPemilikModal(id) {
   const u = id ? state.users.find(x => x.id === id) : null;
   const isEdit = !!u;
-  
-  // Ambil data perumahan jika belum ada di state
-  if (!state.perumahan || state.perumahan.length === 0) {
-    try {
-      const snap = await getDocs(collection(db, "perumahan"));
-      state.perumahan = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    } catch (e) { console.error(e); }
-  }
-
   const docFields = DOC_KEYS.map(k => {
     const isReq = REQUIRED_DOCS.includes(k);
     return `<div class="field"><label>${DOC_LABELS[k]} ${isReq ? '*' : ''}</label>
@@ -797,18 +793,6 @@ async function openPemilikModal(id) {
               <div class="field"><label>Password *</label><input class="input" type="text" id="uPassword" required value="${esc(u?.password || '')}" placeholder="Min. 6 karakter"></div>
               <div class="field"><label>Blok / No. Rumah *</label><input class="input" id="uBlok" required value="${esc(u?.blok || '')}"></div>
               <div class="field"><label>No. HP</label><input class="input" id="uPhone" value="${esc(u?.phone || '')}"></div>
-              
-              <!-- TAMBAHAN: Pilihan Perumahan -->
-              <div class="field">
-                <label>Nama Perumahan *</label>
-                <select class="input" id="uPerumahan" required>
-                  <option value="">— Pilih Perumahan —</option>
-                  ${state.perumahan.map(p => `
-                    <option value="${p.id}" data-nama="${esc(p.nama)}" ${u?.perumahanId === p.id ? 'selected' : ''}>${esc(p.nama)}</option>
-                  `).join('')}
-                </select>
-              </div>
-
               <div class="field full"><label>Tanggal Serah Terima *</label><input class="input" type="date" id="uTglSerah" required value="${u?.tanggalSerahTerima ? new Date(u.tanggalSerahTerima).toISOString().split('T')[0] : ''}"></div>
             </div>
             <h4 style="margin:20px 0 10px;">Dokumen</h4>
@@ -838,19 +822,12 @@ async function openPemilikModal(id) {
         }
       }
       
-      // Ambil data perumahan yang dipilih
-      const perumahanSelect = $('#uPerumahan');
-      const perumahanId = perumahanSelect.value;
-      const perumahanNama = perumahanSelect.options[perumahanSelect.selectedIndex]?.dataset.nama || '';
-
       const data = {
         nama: $('#uNama').value.trim(),
         email: $('#uEmail').value.trim(),
         password: $('#uPassword').value,
         blok: $('#uBlok').value.trim(),
         phone: $('#uPhone').value.trim(),
-        perumahanId: perumahanId,     // Simpan ID
-        perumahanNama: perumahanNama, // Simpan Nama
         tanggalSerahTerima: new Date($('#uTglSerah').value).toISOString(),
         dokumen: dokumenBaru,
         role: ROLE.USER
@@ -872,24 +849,217 @@ async function openPemilikModal(id) {
     }
   });
 }
-function openDocModal(userId) {
+
+/* =========================================================
+   FITUR LEGAL STAFF
+   ========================================================= */
+
+// 1 & 2. Modal Verifikasi Dokumen & Catatan Legal
+function openLegalDocModal(userId) {
   const u = state.users.find(x => x.id === userId);
-  const docsHtml = DOC_KEYS.map(k => {
-    const src = u.dokumen?.[k];
-    return `<div class="doc-card">
-      <div class="doc-name">${DOC_LABELS[k].replace(' *', '')}</div>
-      ${src ? `<img src="${src}" data-action="zoom-src" data-src="${src}">` : `<div class="empty-doc">Kosong</div>`}
-    </div>`;
-  }).join('');
-  
+  if (!u) return;
+  const d = u.dokumen || {};
+  const st = u.statusDokumen || {};
+
+  const renderDocSection = (key) => {
+    const url = d[key];
+    if (!url) return `<div class="field"><label>${DOC_LABELS[key]}</label><span class="status ditolak">Belum diunggah</span></div>`;
+    
+    return `
+      <div class="card" style="margin-bottom:16px; padding:16px;">
+        <h4 style="margin-top:0;">${DOC_LABELS[key].replace(' *', '')}</h4>
+        <img src="${url}" style="width:100%; max-height:300px; object-fit:contain; border-radius:8px; margin-bottom:12px; background:#f8fafc;">
+        <div class="form-grid">
+          <div class="field">
+            <label>Status Verifikasi</label>
+            <select class="input" id="status_${key}">
+              <option value="pending" ${(!st[key] || st[key]==='pending') ? 'selected' : ''}>⏳ Pending</option>
+              <option value="valid" ${st[key]==='valid' ? 'selected' : ''}>✓ Valid</option>
+              <option value="revisi" ${st[key]==='revisi' ? 'selected' : ''}>✕ Minta Revisi</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Catatan untuk Pemilik (Jika Revisi)</label>
+            <input class="input" id="catatan_${key}" value="${esc(u.catatanDokumen?.[key] || '')}" placeholder="Contoh: KTP buram...">
+          </div>
+        </div>
+      </div>`;
+  };
+
   $('#modalRoot').innerHTML = `
     <div class="modal-backdrop">
       <div class="modal modal-lg">
-        <div class="modal-head"><h3>Dokumen: ${esc(u.nama)}</h3><button class="modal-close" data-action="close-modal">✕</button></div>
-        <div class="modal-body"><div class="doc-grid">${docsHtml}</div></div>
+        <div class="modal-head">
+          <div><h3>Verifikasi Legal: ${esc(u.nama)}</h3></div>
+          <button class="modal-close" data-action="close-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="max-height: 60vh; overflow-y:auto; padding-right:10px;">
+            ${DOC_KEYS.map(k => renderDocSection(k)).join('')}
+            
+            <div class="card" style="background:#fffbeb; border-color:#fcd34d;">
+              <h4 style="margin-top:0;">📝 Catatan Internal Legal</h4>
+              <p class="muted" style="font-size:12px; margin-bottom:10px;">Catatan ini hanya bisa dilihat oleh Staff Legal dan Admin.</p>
+              <textarea class="input" id="legalNotes" rows="3" placeholder="Tambahkan catatan khusus...">${esc(u.legalNotes || '')}</textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-ghost" data-action="close-modal">Batal</button>
+            <button type="button" class="btn btn-primary" data-action="save-legal-doc" data-id="${u.id}">Simpan Verifikasi</button>
+          </div>
+        </div>
       </div>
     </div>`;
   document.body.style.overflow = 'hidden';
+}
+
+async function saveLegalVerification(userId) {
+  const u = state.users.find(x => x.id === userId);
+  if (!u) return;
+
+  const newStatus = {};
+  const newCatatan = {};
+  let needsRevision = false;
+
+  DOC_KEYS.forEach(k => {
+    const statusEl = $(`#status_${k}`);
+    const catatanEl = $(`#catatan_${k}`);
+    if (statusEl) newStatus[k] = statusEl.value;
+    if (catatanEl) newCatatan[k] = catatanEl.value.trim();
+    if (statusEl && statusEl.value === 'revisi') needsRevision = true;
+  });
+
+  const notes = $('#legalNotes').value.trim();
+
+  try {
+    await updateDoc(doc(db, "users", userId), {
+      statusDokumen: newStatus,
+      catatanDokumen: newCatatan,
+      legalNotes: notes
+    });
+
+    // Kirim Notifikasi ke Pemilik jika ada revisi
+    if (needsRevision) {
+      await addDoc(collection(db, "notifications"), {
+        userId: userId,
+        message: `Staff Legal meminta revisi dokumen Anda. Silakan cek aplikasi dan unggah ulang dokumen yang salah.`,
+        isRead: false,
+        createdAt: serverTimestamp()
+      });
+      toast('Notifikasi revisi dikirim ke pemilik.', 'info');
+    }
+
+    toast('Verifikasi legal disimpan!', 'success');
+    closeModal(); renderLegalDokumen();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// 4. Validasi Klaim Retensi oleh Legal
+async function validateRetention(id) {
+  const r = state.requests.find(x => x.id === id);
+  if (!r) return;
+  
+  const note = $('#legalRetentionNote').value.trim();
+  const status = $('#legalRetentionStatus').value;
+  
+  if (!note) return toast('Catatan validasi wajib diisi', 'error');
+
+  try {
+    const newTimeline = [...(r.timeline || []), {
+      status: r.status, 
+      note: `Validasi Legal: ${status === 'approved' ? 'DISETUJUI' : 'DITOLAK'}. Catatan: ${note}`, 
+      by: state.session.nama, 
+      role: 'legal',
+      at: new Date().toISOString(), 
+      photos: []
+    }];
+
+    await updateDoc(doc(db, "requests", id), {
+      legalValidation: { status, note, by: state.session.nama },
+      timeline: newTimeline,
+      updatedAt: serverTimestamp()
+    });
+
+    // Notifikasi ke Admin
+    await addDoc(collection(db, "notifications"), {
+      userId: 'admin',
+      message: `Legal telah memvalidasi pengajuan "${r.title}" dengan status: ${status === 'approved' ? 'DISETUJUI' : 'DITOLAK'}`,
+      requestId: id,
+      isRead: false,
+      createdAt: serverTimestamp()
+    });
+
+    toast('Validasi legal berhasil disimpan!', 'success');
+    closeModal(); renderPage();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// 5. Cetak Data Legal
+function cetakDataLegal(userId) {
+  const u = state.users.find(x => x.id === userId);
+  if (!u) return;
+
+  const printWindow = window.open('', '_blank');
+  const d = u.dokumen || {};
+
+  printWindow.document.write(`
+    <html>
+    <head>
+      <title>Cetak Data Legal - ${u.nama}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
+        h2 { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; }
+        .section { margin-bottom: 20px; }
+        .row { display: flex; margin-bottom: 8px; }
+        .label { width: 150px; font-weight: bold; }
+        .value { flex: 1; }
+        .docs { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+        .doc-box { border: 1px solid #ccc; padding: 10px; text-align: center; }
+        .doc-box img { max-width: 100%; height: auto; max-height: 300px; object-fit: contain; }
+        .doc-title { font-weight: bold; margin-bottom: 10px; text-transform: uppercase; }
+        .legal-notes { background: #fffbeb; padding: 15px; border: 1px solid #fcd34d; margin-top: 20px; }
+        @media print { .no-print { display: none; } }
+      </style>
+    </head>
+    <body>
+      <h2>BERKAS LEGAL PEMILIK RUMAH</h2>
+      
+      <div class="section">
+        <div class="row"><div class="label">Nama Lengkap</div><div class="value">: ${esc(u.nama)}</div></div>
+        <div class="row"><div class="label">Email</div><div class="value">: ${esc(u.email)}</div></div>
+        <div class="row"><div class="label">Blok / No. Rumah</div><div class="value">: ${esc(u.blok)}</div></div>
+        <div class="row"><div class="label">No. HP</div><div class="value">: ${esc(u.phone || '-')}</div></div>
+        <div class="row"><div class="label">Tanggal Serah Terima</div><div class="value">: ${formatDate(u.tanggalSerahTerima)}</div></div>
+      </div>
+
+      ${u.legalNotes ? `
+        <div class="legal-notes">
+          <strong>Catatan Internal Legal:</strong><br>
+          <p>${esc(u.legalNotes).replace(/\n/g, '<br>')}</p>
+        </div>
+      ` : ''}
+
+      <div class="docs">
+        ${DOC_KEYS.map(k => d[k] ? `
+          <div class="doc-box">
+            <div class="doc-title">${DOC_LABELS[k].replace(' *', '')}</div>
+            <img src="${d[k]}">
+            <p style="margin-top:10px; font-size:10px; color:#666;">Status: ${u.statusDokumen?.[k]?.toUpperCase() || 'PENDING'}</p>
+          </div>
+        ` : '').join('')}
+      </div>
+
+      <div class="no-print" style="margin-top: 30px; text-align: center;">
+        <button onclick="window.print()" style="padding: 10px 20px; font-size: 14px; cursor: pointer;">Cetak / Simpan PDF</button>
+      </div>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
 }
 
 /* ---------------- KELOLA AKUN (SUPER ADMIN) ---------------- */
@@ -1028,6 +1198,7 @@ async function openDetail(id) {
     </div>
   `).join('');
 
+  // Panel Admin
   const adminPanel = (state.isAdmin || state.isSuperAdmin) ? `
     <div class="side-box">
       <h4>Kelola Pengajuan</h4>
@@ -1043,6 +1214,23 @@ async function openDetail(id) {
     </div>
   ` : '';
 
+  // Panel Legal (Validasi Retensi)
+  const legalPanel = (state.isLegal && r.status === 'verifikasi') ? `
+    <div class="side-box" style="border:2px solid var(--warning); background:#fffbeb;">
+      <h4>⚖️ Validasi Legal</h4>
+      <p class="muted" style="font-size:12px; margin-bottom:10px;">Berikan validasi apakah klaim retensi ini layak atau tidak.</p>
+      <div class="field">
+        <label>Keputusan Legal</label>
+        <select class="input" id="legalRetentionStatus">
+          <option value="approved">✓ Setujui (Layak)</option>
+          <option value="rejected">✕ Tolak (Tidak Layak)</option>
+        </select>
+      </div>
+      <div class="field"><label>Catatan Validasi</label><textarea class="input" id="legalRetentionNote" rows="3" placeholder="Alasan persetujuan/penolakan..."></textarea></div>
+      <button class="btn btn-primary btn-block" data-action="validate-retention" data-id="${r.id}">Simpan Validasi</button>
+    </div>
+  ` : '';
+
   $('#modalRoot').innerHTML = `
     <div class="modal-backdrop">
       <div class="modal modal-lg">
@@ -1055,7 +1243,10 @@ async function openDetail(id) {
               <h4 style="margin-top:20px;">Timeline</h4>
               <div class="timeline">${timelineHtml}</div>
             </div>
-            <aside>${adminPanel}</aside>
+            <aside>
+              ${legalPanel}
+              ${adminPanel}
+            </aside>
           </div>
         </div>
       </div>
@@ -1144,7 +1335,11 @@ document.addEventListener('click', async (e) => {
     case 'view-pemilik-perumahan': openPemilikPerumahanModal(el.dataset.id); break;
     case 'add-pemilik': openPemilikModal(null); break;
     case 'edit-pemilik': openPemilikModal(el.dataset.id); break;
-    case 'view-documents': openDocModal(el.dataset.id); break;
+    case 'view-documents': openDocModal(el.dataset.id); break; // Untuk Admin
+    case 'legal-doc': openLegalDocModal(el.dataset.id); break; // Khusus Legal
+    case 'save-legal-doc': saveLegalVerification(el.dataset.id); break;
+    case 'print-legal': cetakDataLegal(el.dataset.id); break;
+    case 'validate-retention': validateRetention(el.dataset.id); break;
     case 'open-detail': openDetail(el.dataset.id); break;
     case 'save-request': saveRequestChanges(el.dataset.id); break;
     
