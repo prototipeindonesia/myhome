@@ -713,14 +713,13 @@ function renderPemilik() {
       <button class="btn btn-primary btn-sm" data-action="add-pemilik">➕ Tambah Pembeli</button>
     </div>
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Nama</th><th>Email</th><th>Blok</th><th>Masa Retensi</th><th>Aksi</th></tr></thead>
+      <thead><tr><th>Nama</th><th>Perumahan</th><th>Email</th><th>Blok</th><th>Masa Retensi</th><th>Aksi</th></tr></thead>
       <tbody id="pemilikTbody"></tbody>
     </table></div></div>
   `;
   $('#searchPemilik').addEventListener('input', applyFilterPemilik);
   applyFilterPemilik();
 }
-
 function applyFilterPemilik() {
   const q = ($('#searchPemilik')?.value || '').toLowerCase().trim();
   let list = state.users.filter(u => u.role === ROLE.USER);
@@ -728,10 +727,15 @@ function applyFilterPemilik() {
   
   const tbody = $('#pemilikTbody');
   if (!tbody) return;
+  
+  // Ubah header tabel (tambahkan <th>Perumahan</th>)
+  // (Bisa juga langsung diubah di HTML renderPemilik)
+
   tbody.innerHTML = list.length ? list.map(u => {
     const w = getWarrantyStatus(u.tanggalSerahTerima);
     return `<tr>
       <td><strong>${esc(u.nama)}</strong></td>
+      <td>${esc(u.perumahanNama || '—')}</td>
       <td>${esc(u.email || '—')}</td>
       <td>${esc(u.blok || '—')}</td>
       <td>${w.expired ? '<span class="status ditolak">Habis</span>' : `<span class="status selesai">${w.daysLeft} Hari</span>`}</td>
@@ -741,9 +745,8 @@ function applyFilterPemilik() {
         <button class="btn btn-danger btn-sm" data-action="delete-pemilik" data-id="${u.id}">Hapus</button>
       </td>
     </tr>`;
-  }).join('') : `<tr><td colspan="5"><div class="empty">Belum ada data.</div></td></tr>`;
+  }).join('') : `<tr><td colspan="6"><div class="empty">Belum ada data.</div></td></tr>`;
 }
-
 function renderLegalDokumen() {
   const list = state.users.filter(u => u.role === ROLE.USER);
   $('#content').innerHTML = `
@@ -764,9 +767,18 @@ function renderLegalDokumen() {
   `;
 }
 
-function openPemilikModal(id) {
+async function openPemilikModal(id) {
   const u = id ? state.users.find(x => x.id === id) : null;
   const isEdit = !!u;
+  
+  // Ambil data perumahan jika belum ada di state
+  if (!state.perumahan || state.perumahan.length === 0) {
+    try {
+      const snap = await getDocs(collection(db, "perumahan"));
+      state.perumahan = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (e) { console.error(e); }
+  }
+
   const docFields = DOC_KEYS.map(k => {
     const isReq = REQUIRED_DOCS.includes(k);
     return `<div class="field"><label>${DOC_LABELS[k]} ${isReq ? '*' : ''}</label>
@@ -785,6 +797,18 @@ function openPemilikModal(id) {
               <div class="field"><label>Password *</label><input class="input" type="text" id="uPassword" required value="${esc(u?.password || '')}" placeholder="Min. 6 karakter"></div>
               <div class="field"><label>Blok / No. Rumah *</label><input class="input" id="uBlok" required value="${esc(u?.blok || '')}"></div>
               <div class="field"><label>No. HP</label><input class="input" id="uPhone" value="${esc(u?.phone || '')}"></div>
+              
+              <!-- TAMBAHAN: Pilihan Perumahan -->
+              <div class="field">
+                <label>Nama Perumahan *</label>
+                <select class="input" id="uPerumahan" required>
+                  <option value="">— Pilih Perumahan —</option>
+                  ${state.perumahan.map(p => `
+                    <option value="${p.id}" data-nama="${esc(p.nama)}" ${u?.perumahanId === p.id ? 'selected' : ''}>${esc(p.nama)}</option>
+                  `).join('')}
+                </select>
+              </div>
+
               <div class="field full"><label>Tanggal Serah Terima *</label><input class="input" type="date" id="uTglSerah" required value="${u?.tanggalSerahTerima ? new Date(u.tanggalSerahTerima).toISOString().split('T')[0] : ''}"></div>
             </div>
             <h4 style="margin:20px 0 10px;">Dokumen</h4>
@@ -814,12 +838,19 @@ function openPemilikModal(id) {
         }
       }
       
+      // Ambil data perumahan yang dipilih
+      const perumahanSelect = $('#uPerumahan');
+      const perumahanId = perumahanSelect.value;
+      const perumahanNama = perumahanSelect.options[perumahanSelect.selectedIndex]?.dataset.nama || '';
+
       const data = {
         nama: $('#uNama').value.trim(),
         email: $('#uEmail').value.trim(),
         password: $('#uPassword').value,
         blok: $('#uBlok').value.trim(),
         phone: $('#uPhone').value.trim(),
+        perumahanId: perumahanId,     // Simpan ID
+        perumahanNama: perumahanNama, // Simpan Nama
         tanggalSerahTerima: new Date($('#uTglSerah').value).toISOString(),
         dokumen: dokumenBaru,
         role: ROLE.USER
@@ -841,7 +872,6 @@ function openPemilikModal(id) {
     }
   });
 }
-
 function openDocModal(userId) {
   const u = state.users.find(x => x.id === userId);
   const docsHtml = DOC_KEYS.map(k => {
