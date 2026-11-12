@@ -473,3 +473,25 @@ tbody tr:hover { background: #fafbff; }
   .doc-grid { grid-template-columns: 1fr 1fr; }
   .notif-dropdown { width: 290px; right: -50px; }
 }
+
+/* =========================================================
+   UPDATE STYLE: Timeline & Widget
+   ========================================================= */
+
+.tl-by-name {
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+/* Widget Feedback warna kuning cerah */
+.countdown-widget.feedback-active {
+  background: linear-gradient(135deg, #f59e0b, #d97706); 
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+}
+
+/* Pastikan tombol disabled terlihat redup */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
