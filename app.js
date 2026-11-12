@@ -1,6 +1,6 @@
 /* =========================================================
    Dreamland — Property Management CRM
-   FIREBASE + CLOUDINARY + UPDATE (Perumahan, Timeline, Garansi)
+   FIREBASE + CLOUDINARY + LEGAL FEATURES + CRUD AKUN
    ========================================================= */
 
 if (!window.FirebaseApp) {
@@ -156,44 +156,23 @@ async function uploadFile(file) {
   }
 }
 
-/* ---------------- AUTH ---------------- */
-onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    try {
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        state.session = { id: user.uid, ...data };
-        state.isSuperAdmin = data.role === ROLE.SUPERADMIN;
-        state.isAdmin = data.role === ROLE.ADMIN || state.isSuperAdmin;
-        state.isLegal = data.role === ROLE.LEGAL;
+/* ---------------- AUTH (FULL FIRESTORE LOGIN) ---------------- */
+// Karena kita ingin membuat akun dari web, kita tidak menggunakan Firebase Auth lagi.
+// Semua login (Admin, Legal, Pemilik) dicek melalui Firestore.
 
-        $('#loginScreen').classList.add('hidden');
-        $('#app').classList.remove('hidden');
-        
-        setupRealtimeListeners();
-        renderNav();
-        renderShellUser();
-        goTo('dashboard');
-      } else {
-        toast("Profil tidak ditemukan di Firestore.", "error");
-        signOut(auth);
-      }
-    } catch (err) {
-      console.error(err);
-      toast("Gagal memuat data user.", "error");
-      signOut(auth);
-    }
-  } else {
-    state.session = null;
-    if(unsubRequests) { unsubRequests(); unsubRequests = null; }
-    if(unsubUsers) { unsubUsers(); unsubUsers = null; }
-    if(unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
-    if(unsubPerumahan) { unsubPerumahan(); unsubPerumahan = null; }
-    $('#loginScreen').classList.remove('hidden');
-    $('#app').classList.add('hidden');
-  }
-});
+function doLogin(email, pass) {
+  const q = query(
+    collection(db, "users"), 
+    where("email", "==", email), 
+    where("password", "==", pass)
+  );
+  
+  return getDocs(q).then(snap => {
+    if (snap.empty) throw new Error("Email atau password salah.");
+    const userDoc = snap.docs[0];
+    return { id: userDoc.id, ...userDoc.data() };
+  });
+}
 
 $('#loginForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -206,59 +185,40 @@ $('#loginForm')?.addEventListener('submit', async (e) => {
   if (errDiv) errDiv.style.display = 'none';
 
   try {
-    await signInWithEmailAndPassword(auth, email, pass);
-  } catch (err) {
-    try {
-      const q = query(collection(db, "users"), where("email", "==", email), where("password", "==", pass), where("role", "==", ROLE.USER));
-      const snap = await getDocs(q);
-      
-      if (!snap.empty) {
-        const userDoc = snap.docs[0];
-        const data = userDoc.data();
-        
-        state.session = { id: userDoc.id, ...data };
-        state.isSuperAdmin = false;
-        state.isAdmin = false;
-        state.isLegal = false;
+    const user = await doLogin(email, pass);
+    
+    state.session = user;
+    state.isSuperAdmin = user.role === ROLE.SUPERADMIN;
+    state.isAdmin = user.role === ROLE.ADMIN || state.isSuperAdmin;
+    state.isLegal = user.role === ROLE.LEGAL;
 
-        $('#loginScreen').classList.add('hidden');
-        $('#app').classList.remove('hidden');
-        
-        setupRealtimeListeners();
-        renderNav();
-        renderShellUser();
-        goTo('dashboard');
-      } else {
-        throw new Error("Email atau password salah.");
-      }
-    } catch (firestoreErr) {
-      if (errDiv) {
-        errDiv.textContent = "Email atau password salah.";
-        errDiv.style.display = 'block';
-      }
+    $('#loginScreen').classList.add('hidden');
+    $('#app').classList.remove('hidden');
+    
+    setupRealtimeListeners();
+    renderNav();
+    renderShellUser();
+    goTo('dashboard');
+  } catch (err) {
+    if (errDiv) {
+      errDiv.textContent = err.message;
+      errDiv.style.display = 'block';
     }
   } finally {
     btn.textContent = 'Masuk'; btn.disabled = false;
   }
 });
 
-$('#btnLogout')?.addEventListener('click', async () => {
-  if (auth.currentUser) {
-    try {
-      await signOut(auth);
-      toast('Anda telah keluar', 'info');
-    } catch (err) { console.error(err); }
-  } else {
-    state.session = null;
-    state.isSuperAdmin = false; state.isAdmin = false; state.isLegal = false;
-    if(unsubRequests) { unsubRequests(); unsubRequests = null; }
-    if(unsubUsers) { unsubUsers(); unsubUsers = null; }
-    if(unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
-    if(unsubPerumahan) { unsubPerumahan(); unsubPerumahan = null; }
-    $('#loginScreen').classList.remove('hidden');
-    $('#app').classList.add('hidden');
-    toast('Anda telah keluar', 'info');
-  }
+$('#btnLogout')?.addEventListener('click', () => {
+  state.session = null;
+  state.isSuperAdmin = false; state.isAdmin = false; state.isLegal = false;
+  if(unsubRequests) { unsubRequests(); unsubRequests = null; }
+  if(unsubUsers) { unsubUsers(); unsubUsers = null; }
+  if(unsubNotifs) { unsubNotifs(); unsubNotifs = null; }
+  if(unsubPerumahan) { unsubPerumahan(); unsubPerumahan = null; }
+  $('#loginScreen').classList.remove('hidden');
+  $('#app').classList.add('hidden');
+  toast('Anda telah keluar', 'info');
 });
 
 /* ---------------- REALTIME LISTENERS ---------------- */
@@ -527,13 +487,12 @@ function renderUserDashboard() {
   const firstName = (state.session.nama || 'User').split(' ')[0];
   const warranty = getWarrantyStatus(state.session.tanggalSerahTerima);
 
-  // Cek apakah ada pengajuan yang butuh feedback (status verifikasi/survei)
   const pendingFeedback = mine.find(r => r.status === 'verifikasi' || r.status === 'survei');
 
   let feedbackWidget = '';
   if (pendingFeedback) {
     feedbackWidget = `
-      <div class="countdown-widget" style="background: linear-gradient(135deg, #f59e0b, #d97706); margin-bottom:20px;">
+      <div class="countdown-widget feedback-active" style="margin-bottom:20px;">
         <div>
           <h4>⚠️ Butuh Tindakan Anda</h4>
           <div class="cd-desc" style="font-size:14px; margin-bottom:8px;">Pengajuan "${esc(pendingFeedback.title)}" membutuhkan respon Anda.</div>
@@ -801,7 +760,6 @@ async function openPemilikModal(id) {
   const u = id ? state.users.find(x => x.id === id) : null;
   const isEdit = !!u;
   
-  // Ambil data perumahan jika belum ada di state
   if (!state.perumahan || state.perumahan.length === 0) {
     try {
       const snap = await getDocs(collection(db, "perumahan"));
@@ -1068,28 +1026,122 @@ function cetakDataLegal(userId) {
   printWindow.document.close();
 }
 
-/* ---------------- KELOLA AKUN (SUPER ADMIN) ---------------- */
+/* =========================================================
+   KELOLA AKUN (SUPER ADMIN) - FULL CRUD
+   ========================================================= */
 function renderKelolaAkun() {
   if (!state.isSuperAdmin) {
     $('#content').innerHTML = `<div class="card card-pad"><div class="empty"><h4>Akses Ditolak</h4></div></div>`;
     return;
   }
 
+  const nonUsers = state.users.filter(u => u.role !== ROLE.USER);
+
   $('#content').innerHTML = `
+    <div class="toolbar">
+      <div class="search-box"><input class="input" id="searchAkun" placeholder="Cari nama atau email..."></div>
+      <div class="spacer"></div>
+      <button class="btn btn-primary btn-sm" data-action="add-akun">➕ Tambah Akun Staf</button>
+    </div>
     <div class="card"><div class="table-wrap"><table>
       <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Aksi</th></tr></thead>
-      <tbody>
-        ${state.users.map(u => `
-          <tr>
-            <td><strong>${esc(u.nama)}</strong></td>
-            <td>${esc(u.email)}</td>
-            <td><span class="status ${u.role === 'superadmin' ? 'ditolak' : (u.role === 'admin' ? 'pengerjaan' : 'selesai')}">${u.role.toUpperCase()}</span></td>
-            <td>${u.id !== state.session.id ? `<button class="btn btn-danger btn-sm" data-action="delete-user" data-id="${u.id}">Hapus Akses</button>` : '<em>(Anda)</em>'}</td>
-          </tr>
-        `).join('')}
-      </tbody>
+      <tbody id="akunTbody"></tbody>
     </table></div></div>
   `;
+
+  const renderTable = (q = '') => {
+    let list = nonUsers;
+    if (q) list = list.filter(u => (u.nama||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q));
+
+    $('#akunTbody').innerHTML = list.map(u => `
+      <tr>
+        <td><strong>${esc(u.nama)}</strong></td>
+        <td>${esc(u.email)}</td>
+        <td><span class="status ${u.role === 'superadmin' ? 'ditolak' : (u.role === 'admin' ? 'pengerjaan' : 'selesai')}">${u.role.toUpperCase()}</span></td>
+        <td class="row-actions">
+          ${u.id !== state.session.id ? `
+            <button class="btn btn-ghost btn-sm" data-action="edit-akun" data-id="${u.id}">Edit</button>
+            <button class="btn btn-danger btn-sm" data-action="delete-akun" data-id="${u.id}">Hapus</button>
+          ` : '<em>(Anda)</em>'}
+        </td>
+      </tr>
+    `).join('') || `<tr><td colspan="4"><div class="empty">Belum ada akun staf.</div></td></tr>`;
+  };
+
+  $('#searchAkun').addEventListener('input', (e) => renderTable(e.target.value.toLowerCase()));
+  renderTable();
+}
+
+function openAkunModal(id) {
+  const u = id ? state.users.find(x => x.id === id) : null;
+  const isEdit = !!u;
+
+  $('#modalRoot').innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal modal-narrow">
+        <div class="modal-head"><h3>${isEdit ? 'Edit Akun Staf' : 'Tambah Akun Staf'}</h3><button class="modal-close" data-action="close-modal">✕</button></div>
+        <div class="modal-body">
+          <form id="akunForm">
+            <div class="field"><label>Nama Lengkap *</label><input class="input" id="aNama" required value="${esc(u?.nama || '')}"></div>
+            <div class="field"><label>Email *</label><input class="input" type="email" id="aEmail" required value="${esc(u?.email || '')}" ${isEdit ? 'disabled' : ''}></div>
+            <div class="field">
+              <label>Password ${isEdit ? '(Kosongkan jika tidak diubah)' : '*'}</label>
+              <input class="input" type="text" id="aPass" ${!isEdit ? 'required' : ''} placeholder="Min. 6 karakter">
+            </div>
+            <div class="field">
+              <label>Role / Hak Akses *</label>
+              <select class="input" id="aRole" required>
+                <option value="admin" ${u?.role === 'admin' ? 'selected' : ''}>Admin Developer</option>
+                <option value="legal" ${u?.role === 'legal' ? 'selected' : ''}>Staff Legal</option>
+                <option value="superadmin" ${u?.role === 'superadmin' ? 'selected' : ''}>Super Admin</option>
+              </select>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-ghost" data-action="close-modal">Batal</button>
+              <button type="submit" class="btn btn-primary">${isEdit ? 'Simpan Perubahan' : 'Buat Akun'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>`;
+  document.body.style.overflow = 'hidden';
+
+  $('#akunForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.textContent = 'Memproses...'; btn.disabled = true;
+
+    try {
+      const data = {
+        nama: $('#aNama').value.trim(),
+        email: $('#aEmail').value.trim(),
+        role: $('#aRole').value,
+        password: $('#aPass').value || (u?.password || '')
+      };
+
+      if (isEdit) {
+        if (!data.password) throw new Error('Password tidak boleh kosong.');
+        await updateDoc(doc(db, "users", u.id), data);
+        toast('Akun staf diperbarui!', 'success');
+      } else {
+        // Cek duplikasi email
+        const isExist = await getDocs(query(collection(db, "users"), where("email", "==", data.email)));
+        if(!isExist.empty) throw new Error("Email sudah terdaftar.");
+
+        if (!data.password) throw new Error('Password wajib diisi untuk akun baru.');
+        
+        await addDoc(collection(db, "users"), { ...data, createdAt: serverTimestamp() });
+        toast('Akun staf berhasil dibuat!', 'success');
+      }
+
+      closeModal(); renderKelolaAkun();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      btn.textContent = isEdit ? 'Simpan Perubahan' : 'Buat Akun';
+      btn.disabled = false;
+    }
+  });
 }
 
 /* ---------------- PENGAJUAN ---------------- */
@@ -1210,7 +1262,6 @@ async function openDetail(id) {
   
   const isUser = state.session.role === ROLE.USER;
 
-  // Timeline dengan Dot Warna & Nama Pelaku
   const timelineHtml = (r.timeline || []).map(t => {
     const dotColor = t.role === 'admin' ? '#6366f1' : (t.role === 'legal' ? '#f59e0b' : '#10b981');
     return `
@@ -1229,7 +1280,6 @@ async function openDetail(id) {
     `;
   }).join('');
 
-  // Panel Admin (Hanya jika status bukan selesai/ditolak)
   const adminPanel = (state.isAdmin || state.isSuperAdmin) && !['selesai','ditolak'].includes(r.status) ? `
     <div class="side-box">
       <h4>Kelola Pengajuan</h4>
@@ -1245,7 +1295,6 @@ async function openDetail(id) {
     </div>
   ` : '';
 
-  // Widget Feedback Pemilik (Hanya muncul di tahap Verifikasi & Survei)
   let userFeedbackPanel = '';
   if (isUser && r.status === 'verifikasi') {
     userFeedbackPanel = `
@@ -1331,46 +1380,6 @@ async function saveRequestChanges(id) {
   closeModal(); toast('Disimpan', 'success');
 }
 
-function openDocModal(userId) {
-  const u = state.users.find(x => x.id === userId);
-  if (!u) return;
-
-  const docsHtml = DOC_KEYS.map(k => {
-    const src = u.dokumen?.[k];
-    const st = u.statusDokumen?.[k];
-    
-    let statusBadge = '';
-    if (src) {
-      if (st === 'valid') statusBadge = `<span class="status selesai" style="margin-top:5px;">✓ Valid</span>`;
-      else if (st === 'revisi') statusBadge = `<span class="status ditolak" style="margin-top:5px;">✕ Revisi</span>`;
-      else statusBadge = `<span class="status verifikasi" style="margin-top:5px;">⏳ Pending</span>`;
-    }
-
-    return `<div class="doc-card">
-      <div class="doc-name">${DOC_LABELS[k].replace(' *', '')}</div>
-      ${src 
-        ? `<img src="${src}" data-action="zoom-src" data-src="${src}" alt="${k}">` 
-        : `<div class="empty-doc">Kosong</div>`}
-      ${statusBadge}
-    </div>`;
-  }).join('');
-  
-  $('#modalRoot').innerHTML = `
-    <div class="modal-backdrop">
-      <div class="modal modal-lg">
-        <div class="modal-head">
-          <div><h3>Dokumen: ${esc(u.nama)}</h3><div class="sub">Blok ${esc(u.blok || '-')} · ${esc(u.perumahanNama || '—')}</div></div>
-          <button class="modal-close" data-action="close-modal">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="doc-grid">${docsHtml}</div>
-        </div>
-      </div>
-    </div>`;
-  document.body.style.overflow = 'hidden';
-}
-
-// Fungsi Feedback Pemilik (Setuju/Batal)
 async function handleUserFeedback(id, val) {
   const r = state.requests.find(x => x.id === id);
   if (!r) return;
@@ -1398,7 +1407,6 @@ async function handleUserFeedback(id, val) {
   closeModal(); renderPage();
 }
 
-// Fungsi Simpan Jadwal Survei
 async function handleUserSurvey(id) {
   const r = state.requests.find(x => x.id === id);
   if (!r) return;
@@ -1481,6 +1489,8 @@ document.addEventListener('click', async (e) => {
     case 'view-pemilik-perumahan': openPemilikPerumahanModal(el.dataset.id); break;
     case 'add-pemilik': openPemilikModal(null); break;
     case 'edit-pemilik': openPemilikModal(el.dataset.id); break;
+    case 'add-akun': openAkunModal(null); break;
+    case 'edit-akun': openAkunModal(el.dataset.id); break;
     case 'view-documents': openDocModal(el.dataset.id); break;
     case 'legal-doc': openLegalDocModal(el.dataset.id); break; 
     case 'save-legal-doc': saveLegalVerification(el.dataset.id); break;
@@ -1508,10 +1518,15 @@ document.addEventListener('click', async (e) => {
       }
       break;
 
-    case 'delete-user':
-      if (confirm("Hapus akses user ini? (Akun Auth harus dihapus manual dari Console)")) {
-        await deleteDoc(doc(db, "users", el.dataset.id));
-        toast('Akses dicabut');
+    case 'delete-akun':
+      if (confirm("Hapus akun staf ini secara permanen?")) {
+        try {
+          await deleteDoc(doc(db, "users", el.dataset.id));
+          toast('Akun staf dihapus', 'success');
+          renderKelolaAkun();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
       }
       break;
 
