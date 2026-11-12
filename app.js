@@ -1331,6 +1331,45 @@ async function saveRequestChanges(id) {
   closeModal(); toast('Disimpan', 'success');
 }
 
+function openDocModal(userId) {
+  const u = state.users.find(x => x.id === userId);
+  if (!u) return;
+
+  const docsHtml = DOC_KEYS.map(k => {
+    const src = u.dokumen?.[k];
+    const st = u.statusDokumen?.[k];
+    
+    let statusBadge = '';
+    if (src) {
+      if (st === 'valid') statusBadge = `<span class="status selesai" style="margin-top:5px;">✓ Valid</span>`;
+      else if (st === 'revisi') statusBadge = `<span class="status ditolak" style="margin-top:5px;">✕ Revisi</span>`;
+      else statusBadge = `<span class="status verifikasi" style="margin-top:5px;">⏳ Pending</span>`;
+    }
+
+    return `<div class="doc-card">
+      <div class="doc-name">${DOC_LABELS[k].replace(' *', '')}</div>
+      ${src 
+        ? `<img src="${src}" data-action="zoom-src" data-src="${src}" alt="${k}">` 
+        : `<div class="empty-doc">Kosong</div>`}
+      ${statusBadge}
+    </div>`;
+  }).join('');
+  
+  $('#modalRoot').innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal modal-lg">
+        <div class="modal-head">
+          <div><h3>Dokumen: ${esc(u.nama)}</h3><div class="sub">Blok ${esc(u.blok || '-')} · ${esc(u.perumahanNama || '—')}</div></div>
+          <button class="modal-close" data-action="close-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="doc-grid">${docsHtml}</div>
+        </div>
+      </div>
+    </div>`;
+  document.body.style.overflow = 'hidden';
+}
+
 // Fungsi Feedback Pemilik (Setuju/Batal)
 async function handleUserFeedback(id, val) {
   const r = state.requests.find(x => x.id === id);
